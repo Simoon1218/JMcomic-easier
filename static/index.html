@@ -7,8 +7,8 @@
   <title>Rinseki的本子站</title>
   <link rel="icon" type="image/jpeg" href="/static/icon.jpg" />
   <link rel="apple-touch-icon" href="/static/icon.jpg" />
-  <link rel="stylesheet" href="/static/styles.css?v=4" />
-  <script type="module" src="/static/app.js?v=4" defer></script>
+  <link rel="stylesheet" href="/static/styles.css?v=5" />
+  <script type="module" src="/static/app.js?v=5" defer></script>
 </head>
 <body>
   <!-- Subtle Ambient Background Glow -->
@@ -197,12 +197,12 @@
       <section id="viewReader" class="view reader-view hidden">
         <div class="reader-toolbar">
           <div class="reader-toolbar-left">
-            <button id="backFromReaderBtn" class="btn btn-ghost btn-sm" type="button">
+            <button id="backFromReaderBtn" class="btn btn-ghost btn-sm" type="button" title="返回详情">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12"></line>
                 <polyline points="12 19 5 12 12 5"></polyline>
               </svg>
-              <span>详情</span>
+              <span class="hide-xs">详情</span>
             </button>
             <span id="readerTitle" class="reader-title"></span>
           </div>
@@ -219,13 +219,13 @@
           </div>
           <div class="reader-toolbar-right">
             <span id="readerProgressText" class="progress-pill">0 / 0</span>
-            <button id="readerDownloadChapterBtn" class="btn btn-primary btn-sm" type="button">
+            <button id="readerDownloadChapterBtn" class="btn btn-primary btn-sm" type="button" title="下载本话 ZIP">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              <span>本话 ZIP</span>
+              <span class="hide-xs">本话 ZIP</span>
             </button>
           </div>
         </div>
