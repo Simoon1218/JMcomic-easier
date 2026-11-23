@@ -83,6 +83,17 @@ const els = {
   downloadProgressBar: $("downloadProgressBar"),
   downloadStatusText: $("downloadStatusText"),
   downloadPercentText: $("downloadPercentText"),
+
+  scrollProgressTrack: $("scrollProgressTrack"),
+  scrollProgressBar: $("scrollProgressBar"),
+  backToTopBtn: $("backToTopBtn"),
+};
+
+const ICONS = {
+  sun: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`,
+  moon: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`,
+  book: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>`,
+  download: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`,
 };
 
 // ---------------- Utilities ----------------
@@ -148,7 +159,7 @@ function applyTheme(theme) {
   const finalTheme = theme === "light" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", finalTheme);
   localStorage.setItem(STORAGE_KEYS.THEME, finalTheme);
-  els.themeIcon.textContent = finalTheme === "dark" ? "☀️" : "🌙";
+  els.themeIcon.innerHTML = finalTheme === "dark" ? ICONS.sun : ICONS.moon;
 }
 
 function initTheme() {
@@ -265,6 +276,10 @@ function switchView(name) {
   els.viewHome.classList.toggle("hidden", name !== "home");
   els.viewAlbum.classList.toggle("hidden", name !== "album");
   els.viewReader.classList.toggle("hidden", name !== "reader");
+  els.scrollProgressTrack.classList.toggle("hidden", name !== "reader");
+  if (name === "reader") {
+    els.scrollProgressBar.style.width = "0%";
+  }
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 
@@ -371,12 +386,12 @@ function openAlbumObject(album) {
 function renderAlbumDetail(album) {
   const authorsText = album.authors?.length ? album.authors.join(" / ") : "未知作者";
   const metaParts = [
-    `<span>编号：<strong>JM${escapeHtml(album.id)}</strong></span>`,
-    `<span>作者：${escapeHtml(authorsText)}</span>`,
-    `<span>章节：${album.chapter_count} 话</span>`,
+    `<span class="meta-chip">编号 <strong>JM${escapeHtml(album.id)}</strong></span>`,
+    `<span class="meta-chip">作者 <strong>${escapeHtml(authorsText)}</strong></span>`,
+    `<span class="meta-chip">章节 <strong>${album.chapter_count} 话</strong></span>`,
   ];
   if (album.page_count) {
-    metaParts.push(`<span>总页数：${album.page_count} 页</span>`);
+    metaParts.push(`<span class="meta-chip">总页数 <strong>${album.page_count} 页</strong></span>`);
   }
 
   const tagsHtml = (album.tags || [])
@@ -389,9 +404,10 @@ function renderAlbumDetail(album) {
     .map(
       (ch) => `
       <div class="chapter-item">
-        <span class="chapter-item-title" title="${escapeHtml(ch.title)}">
-          ${ch.index}. ${escapeHtml(ch.title)}
-        </span>
+        <div class="chapter-item-main">
+          <span class="chapter-num">${String(ch.index).padStart(2, "0")}</span>
+          <span class="chapter-item-title" title="${escapeHtml(ch.title)}">${escapeHtml(ch.title)}</span>
+        </div>
         <div class="chapter-item-actions">
           <button class="btn btn-secondary btn-xs" type="button" data-read-photo="${escapeHtml(ch.photo_id)}">预览</button>
           <button class="btn btn-ghost btn-xs" type="button" data-zip-chapter="${escapeHtml(ch.photo_id)}" data-zip-chapter-title="${escapeHtml(ch.title)}">ZIP</button>
@@ -402,26 +418,39 @@ function renderAlbumDetail(album) {
     .join("");
 
   const firstPhotoId = album.chapters?.[0]?.photo_id || album.id;
+  const safeCoverUrl = escapeHtml(album.cover_url);
 
   els.albumDetailContainer.innerHTML = `
-    <div class="album-card">
-      <img class="album-cover" src="${escapeHtml(album.cover_url)}" alt="${escapeHtml(album.title)}" />
-      <div class="album-info">
-        <h1>${escapeHtml(album.title)}</h1>
-        <div class="album-meta">${metaParts.join("")}</div>
-        ${tagsHtml ? `<div class="tag-list">${tagsHtml}</div>` : ""}
-        ${album.description ? `<p class="album-desc">${escapeHtml(album.description)}</p>` : ""}
-        <div class="album-actions">
-          <button class="btn btn-primary" type="button" id="startReadBtn" data-read-photo="${escapeHtml(firstPhotoId)}">开始在线预览</button>
-          <button class="btn btn-secondary" type="button" id="downloadAlbumZipBtn">
-            ${album.chapter_count > 1 ? `整本打包 ZIP（共 ${album.chapter_count} 话）` : "下载为 ZIP"}
-          </button>
+    <div class="album-hero">
+      <div class="album-backdrop" style="background-image: url('${safeCoverUrl}')"></div>
+      <div class="album-card">
+        <div class="album-cover-frame">
+          <img class="album-cover" src="${safeCoverUrl}" alt="${escapeHtml(album.title)}" />
+        </div>
+        <div class="album-info">
+          <h1>${escapeHtml(album.title)}</h1>
+          <div class="album-meta">${metaParts.join("")}</div>
+          ${tagsHtml ? `<div class="tag-list">${tagsHtml}</div>` : ""}
+          ${album.description ? `<p class="album-desc">${escapeHtml(album.description)}</p>` : ""}
+          <div class="album-actions">
+            <button class="btn btn-primary btn-lg" type="button" id="startReadBtn" data-read-photo="${escapeHtml(firstPhotoId)}">
+              ${ICONS.book}
+              <span>开始在线预览</span>
+            </button>
+            <button class="btn btn-secondary btn-lg" type="button" id="downloadAlbumZipBtn">
+              ${ICONS.download}
+              <span>${album.chapter_count > 1 ? `整本打包 ZIP（共 ${album.chapter_count} 话）` : "下载为 ZIP"}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="chapters-panel">
-      <h2>章节列表（支持单话预览与单话 ZIP 下载）</h2>
+      <div class="chapters-panel-header">
+        <h2>章节目录</h2>
+        <span class="meta-pill">共 ${album.chapter_count} 话 · 支持单话预览与 ZIP</span>
+      </div>
       <div class="chapter-list">${chaptersHtml}</div>
     </div>
   `;
@@ -493,13 +522,18 @@ function createPageBox(page, total, isSingleMode) {
   img.alt = `第 ${page.number} 页`;
   img.loading = isSingleMode ? "eager" : "lazy";
   img.decoding = "async";
+  img.onload = () => box.classList.add("loaded");
   img.src = page.url;
+  if (img.complete && img.naturalWidth > 0) {
+    box.classList.add("loaded");
+  }
 
   const badge = document.createElement("span");
   badge.className = "page-index-badge";
   badge.textContent = `${page.number} / ${total}`;
 
   img.onerror = () => {
+    box.classList.add("loaded");
     box.innerHTML = "";
     const fb = document.createElement("div");
     fb.className = "reader-page-fallback";
@@ -511,6 +545,7 @@ function createPageBox(page, total, isSingleMode) {
     retryBtn.onclick = (e) => {
       e.stopPropagation();
       const freshUrl = `${page.url}?t=${Date.now()}`;
+      box.classList.remove("loaded");
       box.innerHTML = "";
       img.src = freshUrl;
       box.appendChild(img);
@@ -952,6 +987,26 @@ function bindEvents() {
       updateDownloadDock({ visible: false });
     }
   });
+
+  els.backToTopBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      const y = window.scrollY || document.documentElement.scrollTop;
+      els.backToTopBtn.classList.toggle("hidden", y < 420);
+
+      if (state.currentView === "reader") {
+        const doc = document.documentElement;
+        const scrollable = Math.max(1, doc.scrollHeight - window.innerHeight);
+        const pct = Math.min(100, Math.max(0, (y / scrollable) * 100));
+        els.scrollProgressBar.style.width = `${pct}%`;
+      }
+    },
+    { passive: true }
+  );
 }
 
 // ---------------- Init ----------------

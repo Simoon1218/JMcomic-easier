@@ -4,26 +4,39 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow, noarchive" />
-  <title>JMComic Easier 阅读器</title>
+  <title>JMComic Easier · 在线漫画阅读器</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <script type="module" src="/static/app.js" defer></script>
 </head>
 <body>
+  <!-- Subtle Ambient Background Glow -->
+  <div class="ambient-bg" aria-hidden="true"></div>
+
   <!-- Auth Gate -->
   <div id="authGate" class="auth-gate hidden">
     <div class="auth-card">
-      <div class="auth-logo">JM</div>
-      <h1>访问验证</h1>
-      <p class="muted">此站点已启用私密口令保护，请输入访问口令继续。</p>
+      <div class="auth-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h1>私密访问验证</h1>
+      <p class="muted">此站点已启用口令保护，请输入访问口令以进入阅读空间。</p>
       <form id="authForm" class="auth-form">
-        <input
-          id="authPasswordInput"
-          type="password"
-          placeholder="请输入访问口令"
-          autocomplete="current-password"
-          required
-        />
-        <button type="submit" class="btn btn-primary" id="authSubmitBtn">进入站点</button>
+        <div class="input-with-icon">
+          <svg class="input-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+          </svg>
+          <input
+            id="authPasswordInput"
+            type="password"
+            placeholder="请输入访问口令"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" id="authSubmitBtn">进入站点</button>
       </form>
       <p id="authError" class="error-text hidden"></p>
     </div>
@@ -31,12 +44,17 @@
 
   <!-- Main App Shell -->
   <div id="appShell" class="app-shell hidden">
+    <!-- Reading Progress Line (visible in reader) -->
+    <div id="scrollProgressTrack" class="scroll-progress-track hidden">
+      <div id="scrollProgressBar" class="scroll-progress-bar"></div>
+    </div>
+
     <!-- Top Header -->
     <header class="topbar" id="mainTopbar">
       <div class="topbar-inner">
         <button class="brand" id="brandHomeBtn" type="button" title="返回首页">
           <span class="brand-badge">JM</span>
-          <span class="brand-title">JMComic Easier</span>
+          <span class="brand-title">JMComic <span class="brand-accent">Easier</span></span>
         </button>
 
         <form class="header-search" id="headerSearchForm">
@@ -45,20 +63,35 @@
             <option value="id">编号</option>
             <option value="keyword">关键词</option>
           </select>
-          <input
-            id="searchInput"
-            type="text"
-            placeholder="输入 JM 编号（如 422866）或关键词..."
-            autocomplete="off"
-          />
-          <button type="submit" class="btn btn-primary btn-sm">搜索</button>
+          <div class="header-search-input-wrap">
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="输入 JM 编号（如 422866）或关键词..."
+              autocomplete="off"
+            />
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span>搜索</span>
+          </button>
         </form>
 
         <div class="topbar-actions">
-          <button id="themeToggleBtn" class="btn btn-ghost btn-icon" type="button" title="切换暗色/浅色主题">
-            <span id="themeIcon">☀️</span>
+          <button id="themeToggleBtn" class="btn btn-ghost btn-icon" type="button" title="切换暗色/浅色主题" aria-label="切换主题">
+            <span id="themeIcon"></span>
           </button>
-          <button id="logoutBtn" class="btn btn-ghost btn-sm hidden" type="button">退出</button>
+          <button id="logoutBtn" class="btn btn-ghost btn-sm hidden" type="button" title="退出登录">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span class="hide-xs">退出</span>
+          </button>
         </div>
       </div>
     </header>
@@ -71,24 +104,45 @@
       <!-- Home / Search View -->
       <section id="viewHome" class="view">
         <div class="hero-card" id="heroCard">
-          <h1>搜索与在线预览</h1>
-          <p class="muted">支持输入数字编号（如 <code>422866</code>、<code>JM422866</code>）、链接或关键词搜索，支持在线阅读与浏览器端直接打包 ZIP。</p>
+          <div class="hero-pill">
+            <span class="hero-dot"></span>
+            无状态实时解密 · 浏览器本地 ZIP 打包
+          </div>
+          <h1>随时随地，<span class="text-gradient">纯粹阅读</span></h1>
+          <p class="hero-subtitle muted">支持纯数字编号、JM 编号、链接直达与全站关键词检索，流畅条漫与单页翻页体验。</p>
           <form class="hero-search" id="heroSearchForm">
-            <input
-              id="heroSearchInput"
-              type="text"
-              placeholder="输入漫画编号或关键词，例如 422866 或 纯爱..."
-              autocomplete="off"
-            />
-            <button type="submit" class="btn btn-primary">立即查找</button>
+            <div class="hero-search-box">
+              <svg class="hero-search-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input
+                id="heroSearchInput"
+                type="text"
+                placeholder="输入漫画编号（如 422866）或关键词..."
+                autocomplete="off"
+              />
+              <button type="submit" class="btn btn-primary">立即查找</button>
+            </div>
           </form>
+          <div class="hero-hints">
+            <span class="hint-badge">编号直达 <code>422866</code></span>
+            <span class="hint-badge">前缀识别 <code>JM422866</code></span>
+            <span class="hint-badge">关键词 / 标签搜索</span>
+          </div>
         </div>
 
         <!-- History -->
         <div id="historySection" class="section-block hidden">
           <div class="section-header">
-            <h2>最近浏览</h2>
-            <button id="clearHistoryBtn" class="btn btn-ghost btn-sm" type="button">清空记录</button>
+            <div class="section-title-group">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <h2>最近浏览</h2>
+            </div>
+            <button id="clearHistoryBtn" class="btn btn-ghost btn-xs" type="button">清空记录</button>
           </div>
           <div id="historyList" class="history-chips"></div>
         </div>
@@ -96,8 +150,16 @@
         <!-- Search Results -->
         <div id="searchResultsSection" class="section-block hidden">
           <div class="section-header">
-            <h2 id="searchResultsHeading">搜索结果</h2>
-            <span id="searchResultsMeta" class="muted"></span>
+            <div class="section-title-group">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+              <h2 id="searchResultsHeading">搜索结果</h2>
+            </div>
+            <span id="searchResultsMeta" class="meta-pill"></span>
           </div>
           <div id="searchResultsGrid" class="comic-grid"></div>
           <div id="searchPagination" class="pagination hidden"></div>
@@ -107,7 +169,13 @@
       <!-- Album Detail View -->
       <section id="viewAlbum" class="view hidden">
         <div class="view-nav">
-          <button id="backFromAlbumBtn" class="btn btn-ghost btn-sm" type="button">← 返回</button>
+          <button id="backFromAlbumBtn" class="btn btn-ghost btn-sm" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>返回列表</span>
+          </button>
         </div>
         <div id="albumDetailContainer"></div>
       </section>
@@ -116,7 +184,13 @@
       <section id="viewReader" class="view reader-view hidden">
         <div class="reader-toolbar">
           <div class="reader-toolbar-left">
-            <button id="backFromReaderBtn" class="btn btn-ghost btn-sm" type="button">← 详情</button>
+            <button id="backFromReaderBtn" class="btn btn-ghost btn-sm" type="button">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>详情</span>
+            </button>
             <span id="readerTitle" class="reader-title"></span>
           </div>
           <div class="reader-toolbar-center">
@@ -132,35 +206,54 @@
           </div>
           <div class="reader-toolbar-right">
             <span id="readerProgressText" class="progress-pill">0 / 0</span>
-            <button id="readerDownloadChapterBtn" class="btn btn-primary btn-sm" type="button">下载本话 ZIP</button>
+            <button id="readerDownloadChapterBtn" class="btn btn-primary btn-sm" type="button">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>本话 ZIP</span>
+            </button>
           </div>
         </div>
 
         <div id="readerCanvas" class="reader-canvas"></div>
 
         <div class="reader-footer" id="readerFooter">
-          <button id="prevChapterBtn" class="btn btn-secondary" type="button">上一话</button>
+          <button id="prevChapterBtn" class="btn btn-secondary" type="button">← 上一话</button>
           <div id="singlePageControls" class="single-page-controls hidden">
             <button id="prevPageBtn" class="btn btn-secondary" type="button">上一页</button>
             <input id="jumpPageInput" type="number" min="1" value="1" aria-label="跳转页码" />
             <button id="nextPageBtn" class="btn btn-secondary" type="button">下一页</button>
           </div>
-          <button id="nextChapterBtn" class="btn btn-secondary" type="button">下一话</button>
+          <button id="nextChapterBtn" class="btn btn-secondary" type="button">下一话 →</button>
         </div>
       </section>
     </main>
+
+    <!-- Back to Top Floating Button -->
+    <button id="backToTopBtn" class="back-to-top hidden" type="button" title="回到顶部" aria-label="回到顶部">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="18 15 12 9 6 15"></polyline>
+      </svg>
+    </button>
   </div>
 
   <!-- Loading Overlay -->
   <div id="loadingOverlay" class="loading-overlay hidden">
-    <div class="spinner"></div>
-    <span id="loadingText">正在加载...</span>
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <span id="loadingText">正在加载...</span>
+    </div>
   </div>
 
   <!-- Floating Download Progress Dock -->
   <div id="downloadDock" class="download-dock hidden">
     <div class="download-dock-header">
-      <strong id="downloadTitle">准备下载...</strong>
+      <div class="download-dock-title">
+        <span class="download-pulse"></span>
+        <strong id="downloadTitle">准备下载...</strong>
+      </div>
       <button id="cancelDownloadBtn" class="btn btn-ghost btn-xs" type="button">取消</button>
     </div>
     <div class="progress-bar-track">
@@ -168,7 +261,7 @@
     </div>
     <div class="download-dock-meta">
       <span id="downloadStatusText" class="muted">等待开始</span>
-      <span id="downloadPercentText">0%</span>
+      <span id="downloadPercentText" class="download-percent">0%</span>
     </div>
   </div>
 </body>
