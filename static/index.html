@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <title>JMComic Easier 阅读器</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+  <script type="module" src="/static/app.js" defer></script>
+</head>
+<body>
+  <!-- Auth Gate -->
+  <div id="authGate" class="auth-gate hidden">
+    <div class="auth-card">
+      <div class="auth-logo">JM</div>
+      <h1>访问验证</h1>
+      <p class="muted">此站点已启用私密口令保护，请输入访问口令继续。</p>
+      <form id="authForm" class="auth-form">
+        <input
+          id="authPasswordInput"
+          type="password"
+          placeholder="请输入访问口令"
+          autocomplete="current-password"
+          required
+        />
+        <button type="submit" class="btn btn-primary" id="authSubmitBtn">进入站点</button>
+      </form>
+      <p id="authError" class="error-text hidden"></p>
+    </div>
+  </div>
+
+  <!-- Main App Shell -->
+  <div id="appShell" class="app-shell hidden">
+    <!-- Top Header -->
+    <header class="topbar" id="mainTopbar">
+      <div class="topbar-inner">
+        <button class="brand" id="brandHomeBtn" type="button" title="返回首页">
+          <span class="brand-badge">JM</span>
+          <span class="brand-title">JMComic Easier</span>
+        </button>
+
+        <form class="header-search" id="headerSearchForm">
+          <select id="searchModeSelect" aria-label="搜索模式">
+            <option value="auto">智能</option>
+            <option value="id">编号</option>
+            <option value="keyword">关键词</option>
+          </select>
+          <input
+            id="searchInput"
+            type="text"
+            placeholder="输入 JM 编号（如 422866）或关键词..."
+            autocomplete="off"
+          />
+          <button type="submit" class="btn btn-primary btn-sm">搜索</button>
+        </form>
+
+        <div class="topbar-actions">
+          <button id="themeToggleBtn" class="btn btn-ghost btn-icon" type="button" title="切换暗色/浅色主题">
+            <span id="themeIcon">☀️</span>
+          </button>
+          <button id="logoutBtn" class="btn btn-ghost btn-sm hidden" type="button">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Views -->
+    <main class="main-container">
+      <!-- Global Notice / Error Banner -->
+      <div id="globalAlert" class="alert hidden"></div>
+
+      <!-- Home / Search View -->
+      <section id="viewHome" class="view">
+        <div class="hero-card" id="heroCard">
+          <h1>搜索与在线预览</h1>
+          <p class="muted">支持输入数字编号（如 <code>422866</code>、<code>JM422866</code>）、链接或关键词搜索，支持在线阅读与浏览器端直接打包 ZIP。</p>
+          <form class="hero-search" id="heroSearchForm">
+            <input
+              id="heroSearchInput"
+              type="text"
+              placeholder="输入漫画编号或关键词，例如 422866 或 纯爱..."
+              autocomplete="off"
+            />
+            <button type="submit" class="btn btn-primary">立即查找</button>
+          </form>
+        </div>
+
+        <!-- History -->
+        <div id="historySection" class="section-block hidden">
+          <div class="section-header">
+            <h2>最近浏览</h2>
+            <button id="clearHistoryBtn" class="btn btn-ghost btn-sm" type="button">清空记录</button>
+          </div>
+          <div id="historyList" class="history-chips"></div>
+        </div>
+
+        <!-- Search Results -->
+        <div id="searchResultsSection" class="section-block hidden">
+          <div class="section-header">
+            <h2 id="searchResultsHeading">搜索结果</h2>
+            <span id="searchResultsMeta" class="muted"></span>
+          </div>
+          <div id="searchResultsGrid" class="comic-grid"></div>
+          <div id="searchPagination" class="pagination hidden"></div>
+        </div>
+      </section>
+
+      <!-- Album Detail View -->
+      <section id="viewAlbum" class="view hidden">
+        <div class="view-nav">
+          <button id="backFromAlbumBtn" class="btn btn-ghost btn-sm" type="button">← 返回</button>
+        </div>
+        <div id="albumDetailContainer"></div>
+      </section>
+
+      <!-- Reader View -->
+      <section id="viewReader" class="view reader-view hidden">
+        <div class="reader-toolbar">
+          <div class="reader-toolbar-left">
+            <button id="backFromReaderBtn" class="btn btn-ghost btn-sm" type="button">← 详情</button>
+            <span id="readerTitle" class="reader-title"></span>
+          </div>
+          <div class="reader-toolbar-center">
+            <select id="readerChapterSelect" aria-label="切换章节"></select>
+            <div class="mode-switch">
+              <button id="modeScrollBtn" class="btn btn-sm" type="button">条漫</button>
+              <button id="modeSingleBtn" class="btn btn-sm" type="button">单页</button>
+            </div>
+            <label class="width-control" id="widthControlLabel" title="调整阅读宽度">
+              <span class="muted">宽度</span>
+              <input id="readerWidthSlider" type="range" min="45" max="100" value="80" />
+            </label>
+          </div>
+          <div class="reader-toolbar-right">
+            <span id="readerProgressText" class="progress-pill">0 / 0</span>
+            <button id="readerDownloadChapterBtn" class="btn btn-primary btn-sm" type="button">下载本话 ZIP</button>
+          </div>
+        </div>
+
+        <div id="readerCanvas" class="reader-canvas"></div>
+
+        <div class="reader-footer" id="readerFooter">
+          <button id="prevChapterBtn" class="btn btn-secondary" type="button">上一话</button>
+          <div id="singlePageControls" class="single-page-controls hidden">
+            <button id="prevPageBtn" class="btn btn-secondary" type="button">上一页</button>
+            <input id="jumpPageInput" type="number" min="1" value="1" aria-label="跳转页码" />
+            <button id="nextPageBtn" class="btn btn-secondary" type="button">下一页</button>
+          </div>
+          <button id="nextChapterBtn" class="btn btn-secondary" type="button">下一话</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+    <span id="loadingText">正在加载...</span>
+  </div>
+
+  <!-- Floating Download Progress Dock -->
+  <div id="downloadDock" class="download-dock hidden">
+    <div class="download-dock-header">
+      <strong id="downloadTitle">准备下载...</strong>
+      <button id="cancelDownloadBtn" class="btn btn-ghost btn-xs" type="button">取消</button>
+    </div>
+    <div class="progress-bar-track">
+      <div id="downloadProgressBar" class="progress-bar-fill" style="width: 0%"></div>
+    </div>
+    <div class="download-dock-meta">
+      <span id="downloadStatusText" class="muted">等待开始</span>
+      <span id="downloadPercentText">0%</span>
+    </div>
+  </div>
+</body>
+</html>

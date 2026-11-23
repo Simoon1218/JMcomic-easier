@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: jmcomic-easier
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: ACCESS_PASSWORD
+        sync: false
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: CACHE_MAX_MB
+        value: "100"
+      - key: JM_WORKERS
+        value: "6"
