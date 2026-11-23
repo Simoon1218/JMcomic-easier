@@ -90,6 +90,7 @@ class JmService:
         self._option = self._build_option()
         self._album_cache = _TTLCache(maxsize=128, ttl=600)
         self._photo_cache = _TTLCache(maxsize=256, ttl=600)
+        self._discover_cache = _TTLCache(maxsize=64, ttl=300)
         self._key_locks_guard = threading.Lock()
         self._key_locks: Dict[str, threading.Lock] = {}
         self._evict_lock = threading.Lock()
@@ -265,6 +266,23 @@ class JmService:
         if not chapters:
             chapters.append({"photo_id": aid, "index": 1, "title": "全一话"})
 
+        related: List[Dict[str, Any]] = []
+        raw_related = getattr(album, "related_list", None) or []
+        for item in raw_related[:12]:
+            if isinstance(item, dict):
+                rid = str(item.get("id") or item.get("album_id") or "").strip()
+                rtitle = str(item.get("name") or item.get("title") or "").strip()
+                rauthor = str(item.get("author") or "").strip()
+                if rid:
+                    related.append(
+                        {
+                            "id": rid,
+                            "title": rtitle or f"JM{rid}",
+                            "author": rauthor,
+                            "cover_url": f"/api/cover/{rid}",
+                        }
+                    )
+
         return {
             "id": aid,
             "title": title,
@@ -276,29 +294,23 @@ class JmService:
             "page_count": int(page_count) if page_count else None,
             "chapter_count": len(chapters),
             "chapters": chapters,
+            "related": related,
             "cover_url": f"/api/cover/{aid}",
         }
 
-    def search(self, query: str, page: int = 1) -> Dict[str, Any]:
-        query = query.strip()
-        if not query:
-            raise JmServiceError("请输入搜索关键词或漫画编号", status_code=400)
-        page = max(1, page)
-        client = self._get_client()
-        try:
-            search_page = client.search_site(search_query=query, page=page)
-        except Exception as exc:
-            raise JmServiceError(f"搜索失败：{exc}", status_code=502) from exc
-
+    @staticmethod
+    def _parse_page_items(page_obj: Any) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
-        parsed = False
+        seen_ids = set()
 
-        # Prefer iter_id_title_tag if available on this jmcomic version
-        iter_tag_fn = getattr(search_page, "iter_id_title_tag", None)
+        iter_tag_fn = getattr(page_obj, "iter_id_title_tag", None)
         if callable(iter_tag_fn):
             try:
                 for aid, title, tags in iter_tag_fn():
                     aid_str = str(aid)
+                    if not aid_str or aid_str in seen_ids:
+                        continue
+                    seen_ids.add(aid_str)
                     items.append(
                         {
                             "id": aid_str,
@@ -307,43 +319,64 @@ class JmService:
                             "cover_url": f"/api/cover/{aid_str}",
                         }
                     )
-                parsed = True
+                if items:
+                    return items
             except Exception:
                 items.clear()
+                seen_ids.clear()
 
-        if not parsed:
-            content = getattr(search_page, "content", None) or []
-            for entry in content:
-                if isinstance(entry, (tuple, list)) and len(entry) >= 2:
-                    aid_str = str(entry[0])
-                    info = entry[1]
-                    if isinstance(info, dict):
-                        title = str(info.get("name") or info.get("title") or f"JM{aid_str}")
-                        tags = [str(t) for t in (info.get("tags") or []) if t]
-                    else:
-                        title = str(info or f"JM{aid_str}")
-                        tags = []
-                    items.append(
-                        {
-                            "id": aid_str,
-                            "title": title,
-                            "tags": tags,
-                            "cover_url": f"/api/cover/{aid_str}",
-                        }
-                    )
-                elif isinstance(entry, dict):
-                    aid_str = str(entry.get("id") or entry.get("album_id") or "")
-                    if not aid_str:
-                        continue
-                    items.append(
-                        {
-                            "id": aid_str,
-                            "title": str(entry.get("name") or entry.get("title") or f"JM{aid_str}"),
-                            "tags": [str(t) for t in (entry.get("tags") or []) if t],
-                            "cover_url": f"/api/cover/{aid_str}",
-                        }
-                    )
+        content = getattr(page_obj, "content", None) or []
+        for entry in content:
+            aid_str = ""
+            title = ""
+            tags: List[str] = []
+            if isinstance(entry, (tuple, list)) and len(entry) >= 2:
+                aid_str = str(entry[0])
+                info = entry[1]
+                if isinstance(info, dict):
+                    title = str(info.get("name") or info.get("title") or f"JM{aid_str}")
+                    tags = [str(t) for t in (info.get("tags") or []) if t]
+                else:
+                    title = str(info or f"JM{aid_str}")
+            elif isinstance(entry, dict):
+                aid_str = str(entry.get("id") or entry.get("album_id") or "")
+                title = str(entry.get("name") or entry.get("title") or f"JM{aid_str}")
+                tags = [str(t) for t in (entry.get("tags") or []) if t]
+            else:
+                aid_str = str(getattr(entry, "album_id", None) or getattr(entry, "id", None) or "")
+                title = str(getattr(entry, "title", None) or getattr(entry, "name", None) or f"JM{aid_str}")
+                tags = [str(t) for t in (getattr(entry, "tags", None) or []) if t]
 
+            if aid_str and aid_str not in seen_ids:
+                seen_ids.add(aid_str)
+                items.append(
+                    {
+                        "id": aid_str,
+                        "title": title or f"JM{aid_str}",
+                        "tags": tags,
+                        "cover_url": f"/api/cover/{aid_str}",
+                    }
+                )
+        return items
+
+    def search(self, query: str, page: int = 1, order_by: str = "mr") -> Dict[str, Any]:
+        query = query.strip()
+        if not query:
+            raise JmServiceError("请输入搜索关键词或漫画编号", status_code=400)
+        page = max(1, page)
+        valid_orders = {"mr", "mv", "tf", "mp"}
+        order_code = order_by if order_by in valid_orders else "mr"
+
+        client = self._get_client()
+        try:
+            try:
+                search_page = client.search_site(search_query=query, page=page, order_by=order_code)
+            except TypeError:
+                search_page = client.search_site(search_query=query, page=page)
+        except Exception as exc:
+            raise JmServiceError(f"搜索失败：{exc}", status_code=502) from exc
+
+        items = self._parse_page_items(search_page)
         total = int(getattr(search_page, "total", len(items)) or len(items))
         page_size = int(getattr(search_page, "page_size", 0) or max(len(items), 1))
         page_count = int(getattr(search_page, "page_count", 0) or 0)
@@ -353,11 +386,56 @@ class JmService:
         return {
             "query": query,
             "page": page,
+            "order_by": order_code,
             "total": total,
             "page_size": page_size,
             "page_count": page_count,
             "items": items,
         }
+
+    def discover(self, tab: str = "week", page: int = 1) -> Dict[str, Any]:
+        page = max(1, page)
+        presets = {
+            "latest": ("a", "mr"),
+            "week": ("w", "mv"),
+            "month": ("m", "mv"),
+            "all": ("a", "tf"),
+        }
+        tab_key = tab if tab in presets else "week"
+        cache_key = f"{tab_key}:{page}"
+        cached = self._discover_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        time_val, order_val = presets[tab_key]
+        client = self._get_client()
+        try:
+            cat_page = client.categories_filter(
+                page=page,
+                time=time_val,
+                category="0",
+                order_by=order_val,
+            )
+        except Exception as exc:
+            raise JmServiceError(f"获取排行榜失败：{exc}", status_code=502) from exc
+
+        items = self._parse_page_items(cat_page)
+        total = int(getattr(cat_page, "total", len(items)) or len(items))
+        page_size = int(getattr(cat_page, "page_size", 0) or max(len(items), 1))
+        page_count = int(getattr(cat_page, "page_count", 0) or getattr(cat_page, "total_page", 0) or 0)
+        if page_count <= 0:
+            page_count = max(1, (total + page_size - 1) // page_size) if total > 0 else 1
+
+        result = {
+            "tab": tab_key,
+            "page": page,
+            "total": total,
+            "page_size": page_size,
+            "page_count": page_count,
+            "items": items,
+        }
+        self._discover_cache.set(cache_key, result)
+        return result
 
     def get_photo(self, photo_id: str) -> Dict[str, Any]:
         photo_id = photo_id.strip()

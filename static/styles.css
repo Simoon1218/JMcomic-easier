@@ -1593,6 +1593,184 @@ html[data-device="mobile"] .back-to-top {
   height: 40px;
 }
 
+/* Section Actions, Discover Tabs, Sort Select */
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compact-select {
+  padding: 5px 10px;
+  font-size: 12.5px;
+  border-radius: 9px;
+}
+
+.discover-tabs {
+  display: inline-flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.tab-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 3px 10px var(--accent-glow);
+}
+
+/* Clickable Author Link */
+.author-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.author-link:hover {
+  opacity: 0.85;
+}
+
+/* Batch Chapter Selection */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-strong);
+}
+
+.chapter-checkbox {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Reader Quick Tools Drawer & Brightness & Double-Page Spread */
+.progress-pill-btn {
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.progress-pill-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.reader-tools-drawer {
+  position: sticky;
+  top: 108px;
+  z-index: 29;
+  max-width: 560px;
+  margin: -10px auto 14px;
+  background: var(--bg-card-glass);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 12px 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: fadeSlideUp 0.16s ease;
+}
+
+html[data-device="mobile"] .reader-tools-drawer {
+  top: calc(86px + env(safe-area-inset-top, 0px));
+  margin: -4px 6px 10px;
+  padding: 10px 12px;
+}
+
+.drawer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.drawer-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 54px;
+}
+
+.drawer-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.drawer-val {
+  min-width: 48px;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.reader-canvas {
+  filter: brightness(var(--reader-brightness, 1));
+  transition: filter 0.15s ease;
+}
+
+.reader-spread {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: min(var(--reader-width, 92%), 100%);
+  align-items: start;
+}
+
+.reader-spread.rtl {
+  direction: rtl;
+}
+
+.reader-spread .reader-page-box {
+  width: 100% !important;
+  direction: ltr;
+}
+
+.related-panel {
+  margin-top: 24px;
+}
+
 /* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }

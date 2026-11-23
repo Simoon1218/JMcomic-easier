@@ -90,11 +90,20 @@ async def auth_logout(response: Response):
     return {"ok": True}
 
 
+@app.get("/api/discover", dependencies=[Depends(require_auth)])
+async def discover_comics(
+    tab: str = Query("week", pattern="^(latest|week|month|all)$"),
+    page: int = Query(1, ge=1, le=200),
+):
+    return await run_blocking(jm_service.discover, tab, page)
+
+
 @app.get("/api/search", dependencies=[Depends(require_auth)])
 async def search_comics(
     q: str = Query(..., min_length=1, max_length=200),
     page: int = Query(1, ge=1, le=500),
     mode: str = Query("auto", pattern="^(auto|id|keyword)$"),
+    order_by: str = Query("mr", pattern="^(mr|mv|tf|mp)$"),
 ):
     raw = q.strip()
     detected_id = extract_album_id(raw) if mode in ("auto", "id") else None
@@ -108,7 +117,7 @@ async def search_comics(
             detail="请输入有效的数字编号（例如 422866 或 JM422866）",
         )
 
-    result = await run_blocking(jm_service.search, raw, page)
+    result = await run_blocking(jm_service.search, raw, page, order_by)
     return {"type": "search", **result}
 
 

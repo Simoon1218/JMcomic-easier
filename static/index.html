@@ -4,11 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="robots" content="noindex, nofollow, noarchive" />
+  <meta name="theme-color" content="#0b0b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Rinseki的本子站" />
   <title>Rinseki的本子站</title>
+  <link rel="manifest" href="/static/manifest.json" />
   <link rel="icon" type="image/jpeg" href="/static/icon.jpg" />
   <link rel="apple-touch-icon" href="/static/icon.jpg" />
-  <link rel="stylesheet" href="/static/styles.css?v=5" />
-  <script type="module" src="/static/app.js?v=5" defer></script>
+  <link rel="stylesheet" href="/static/styles.css?v=6" />
+  <script type="module" src="/static/app.js?v=6" defer></script>
 </head>
 <body>
   <!-- Subtle Ambient Background Glow -->
@@ -140,7 +145,12 @@
               </svg>
               <h2>我的收藏</h2>
             </div>
-            <span id="favoritesCount" class="meta-pill">0 本</span>
+            <div class="section-actions">
+              <span id="favoritesCount" class="meta-pill">0 本</span>
+              <button id="exportBackupBtn" class="btn btn-ghost btn-xs" type="button" title="导出收藏与阅读进度备份">导出备份</button>
+              <button id="importBackupBtn" class="btn btn-ghost btn-xs" type="button" title="从 JSON 文件恢复收藏与进度">导入恢复</button>
+              <input id="importBackupInput" type="file" accept=".json,application/json" class="hidden" />
+            </div>
           </div>
           <div id="favoritesGrid" class="comic-grid"></div>
         </div>
@@ -155,7 +165,10 @@
               </svg>
               <h2>最近浏览</h2>
             </div>
-            <button id="clearHistoryBtn" class="btn btn-ghost btn-xs" type="button">清空记录</button>
+            <div class="section-actions">
+              <button id="historyImportBackupBtn" class="btn btn-ghost btn-xs" type="button" title="导入收藏与阅读进度">导入备份</button>
+              <button id="clearHistoryBtn" class="btn btn-ghost btn-xs" type="button">清空记录</button>
+            </div>
           </div>
           <div id="historyList" class="history-chips"></div>
         </div>
@@ -172,10 +185,38 @@
               </svg>
               <h2 id="searchResultsHeading">搜索结果</h2>
             </div>
-            <span id="searchResultsMeta" class="meta-pill"></span>
+            <div class="section-actions">
+              <select id="searchOrderSelect" class="compact-select" aria-label="排序方式">
+                <option value="mr">按最新</option>
+                <option value="mv">最多观看</option>
+                <option value="tf">最多点赞</option>
+                <option value="mp">最多图片</option>
+              </select>
+              <span id="searchResultsMeta" class="meta-pill"></span>
+            </div>
           </div>
           <div id="searchResultsGrid" class="comic-grid"></div>
           <div id="searchPagination" class="pagination hidden"></div>
+        </div>
+
+        <!-- Discover / Rankings -->
+        <div id="discoverSection" class="section-block">
+          <div class="section-header">
+            <div class="section-title-group">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+              <h2>发现与排行</h2>
+            </div>
+            <div class="discover-tabs" id="discoverTabs">
+              <button class="tab-btn active" type="button" data-discover-tab="week">周榜</button>
+              <button class="tab-btn" type="button" data-discover-tab="month">月榜</button>
+              <button class="tab-btn" type="button" data-discover-tab="latest">最新</button>
+              <button class="tab-btn" type="button" data-discover-tab="all">高赞</button>
+            </div>
+          </div>
+          <div id="discoverGrid" class="comic-grid"></div>
+          <div id="discoverPagination" class="pagination hidden"></div>
         </div>
       </section>
 
@@ -211,6 +252,7 @@
             <div class="mode-switch">
               <button id="modeScrollBtn" class="btn btn-sm" type="button">条漫</button>
               <button id="modeSingleBtn" class="btn btn-sm" type="button">单页</button>
+              <button id="modeDoubleBtn" class="btn btn-sm hide-xs" type="button" title="双页对开（桌面/平板）">双页</button>
             </div>
             <label class="width-control" id="widthControlLabel" title="调整阅读宽度">
               <span class="muted">宽度</span>
@@ -218,7 +260,9 @@
             </label>
           </div>
           <div class="reader-toolbar-right">
-            <span id="readerProgressText" class="progress-pill">0 / 0</span>
+            <button id="readerProgressBtn" class="progress-pill progress-pill-btn" type="button" title="点击展开快捷跳页与阅读设置">
+              <span id="readerProgressText">0 / 0</span>
+            </button>
             <button id="readerDownloadChapterBtn" class="btn btn-primary btn-sm" type="button" title="下载本话 ZIP">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -227,6 +271,27 @@
               </svg>
               <span class="hide-xs">本话 ZIP</span>
             </button>
+          </div>
+        </div>
+
+        <!-- Reader Quick Popover Drawer (Jump Slider, Brightness, Auto-Scroll, Fullscreen, RTL, PDF) -->
+        <div id="readerToolsDrawer" class="reader-tools-drawer hidden">
+          <div class="drawer-row">
+            <span class="drawer-label">快速跳页</span>
+            <input id="readerPageSlider" type="range" min="1" max="1" value="1" />
+            <span id="readerSliderVal" class="drawer-val">1 / 1</span>
+          </div>
+          <div class="drawer-row">
+            <span class="drawer-label">夜间亮度</span>
+            <input id="readerBrightnessSlider" type="range" min="35" max="100" value="100" />
+            <span id="readerBrightnessVal" class="drawer-val">100%</span>
+          </div>
+          <div class="drawer-actions">
+            <button id="autoScrollBtn" class="btn btn-secondary btn-xs" type="button">自动滚动：关</button>
+            <button id="autoScrollSpeedBtn" class="btn btn-ghost btn-xs" type="button">速度：中</button>
+            <button id="readerRtlBtn" class="btn btn-ghost btn-xs hide-xs" type="button">双页：右→左</button>
+            <button id="readerFullscreenBtn" class="btn btn-ghost btn-xs" type="button">全屏阅读</button>
+            <button id="readerDownloadPdfBtn" class="btn btn-secondary btn-xs" type="button">本话 PDF</button>
           </div>
         </div>
 

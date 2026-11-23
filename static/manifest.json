@@ -1,0 +1,19 @@
+{
+  "name": "Rinseki的本子站",
+  "short_name": "Rinseki",
+  "description": "轻量级在线漫画预览与本地打包阅读器",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0b14",
+  "theme_color": "#0b0b14",
+  "icons": [
+    {
+      "src": "/static/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

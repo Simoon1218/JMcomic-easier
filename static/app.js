@@ -1,4 +1,5 @@
 import { createZipBlob } from "./zip.js";
+import { createPdfBlob } from "./pdf.js";
 
 const STORAGE_KEYS = {
   THEME: "jm_theme",
@@ -7,6 +8,8 @@ const STORAGE_KEYS = {
   PROGRESS: "jm_read_progress_v1",
   READER_MODE: "jm_reader_mode",
   READER_WIDTH: "jm_reader_width",
+  READER_BRIGHTNESS: "jm_reader_brightness",
+  READER_RTL: "jm_reader_rtl",
 };
 
 const state = {
@@ -15,12 +18,22 @@ const state = {
   authEnabled: false,
   authenticated: false,
   currentView: "home", // home | album | reader
-  lastSearch: null, // { query, page, mode }
+  lastSearch: null, // { query, page, mode, orderBy }
+  discoverTab: "week",
+  discoverPage: 1,
+  discoverLoaded: false,
   currentAlbum: null,
   currentPhoto: null,
   chapterDescending: false,
-  readerMode: localStorage.getItem(STORAGE_KEYS.READER_MODE) || "scroll", // scroll | single
+  batchMode: false,
+  selectedChapters: new Set(),
+  readerMode: localStorage.getItem(STORAGE_KEYS.READER_MODE) || "scroll", // scroll | single | double
   readerWidth: Number(localStorage.getItem(STORAGE_KEYS.READER_WIDTH) || "80"),
+  readerBrightness: Number(localStorage.getItem(STORAGE_KEYS.READER_BRIGHTNESS) || "100"),
+  readerRtl: localStorage.getItem(STORAGE_KEYS.READER_RTL) !== "false",
+  autoScrollActive: false,
+  autoScrollSpeedIdx: 1, // 0: slow, 1: medium, 2: fast
+  autoScrollRaf: null,
   singlePageIndex: 0,
   downloadController: null,
   downloading: false,
@@ -54,14 +67,23 @@ const els = {
   favoritesSection: $("favoritesSection"),
   favoritesCount: $("favoritesCount"),
   favoritesGrid: $("favoritesGrid"),
+  exportBackupBtn: $("exportBackupBtn"),
+  importBackupBtn: $("importBackupBtn"),
+  importBackupInput: $("importBackupInput"),
   historySection: $("historySection"),
   historyList: $("historyList"),
+  historyImportBackupBtn: $("historyImportBackupBtn"),
   clearHistoryBtn: $("clearHistoryBtn"),
   searchResultsSection: $("searchResultsSection"),
   searchResultsHeading: $("searchResultsHeading"),
+  searchOrderSelect: $("searchOrderSelect"),
   searchResultsMeta: $("searchResultsMeta"),
   searchResultsGrid: $("searchResultsGrid"),
   searchPagination: $("searchPagination"),
+  discoverSection: $("discoverSection"),
+  discoverTabs: $("discoverTabs"),
+  discoverGrid: $("discoverGrid"),
+  discoverPagination: $("discoverPagination"),
 
   viewAlbum: $("viewAlbum"),
   backFromAlbumBtn: $("backFromAlbumBtn"),
@@ -73,9 +95,21 @@ const els = {
   readerChapterSelect: $("readerChapterSelect"),
   modeScrollBtn: $("modeScrollBtn"),
   modeSingleBtn: $("modeSingleBtn"),
+  modeDoubleBtn: $("modeDoubleBtn"),
   readerWidthSlider: $("readerWidthSlider"),
+  readerProgressBtn: $("readerProgressBtn"),
   readerProgressText: $("readerProgressText"),
   readerDownloadChapterBtn: $("readerDownloadChapterBtn"),
+  readerToolsDrawer: $("readerToolsDrawer"),
+  readerPageSlider: $("readerPageSlider"),
+  readerSliderVal: $("readerSliderVal"),
+  readerBrightnessSlider: $("readerBrightnessSlider"),
+  readerBrightnessVal: $("readerBrightnessVal"),
+  autoScrollBtn: $("autoScrollBtn"),
+  autoScrollSpeedBtn: $("autoScrollSpeedBtn"),
+  readerRtlBtn: $("readerRtlBtn"),
+  readerFullscreenBtn: $("readerFullscreenBtn"),
+  readerDownloadPdfBtn: $("readerDownloadPdfBtn"),
   readerCanvas: $("readerCanvas"),
   prevChapterBtn: $("prevChapterBtn"),
   nextChapterBtn: $("nextChapterBtn"),
@@ -277,6 +311,75 @@ function applyTheme(theme) {
 function initTheme() {
   const saved = localStorage.getItem(STORAGE_KEYS.THEME) || "dark";
   applyTheme(saved);
+  applyBrightness(state.readerBrightness);
+}
+
+function applyBrightness(val) {
+  const clamped = Math.max(35, Math.min(100, Number(val) || 100));
+  state.readerBrightness = clamped;
+  localStorage.setItem(STORAGE_KEYS.READER_BRIGHTNESS, String(clamped));
+  document.documentElement.style.setProperty("--reader-brightness", String(clamped / 100));
+  if (els.readerBrightnessSlider) els.readerBrightnessSlider.value = String(clamped);
+  if (els.readerBrightnessVal) els.readerBrightnessVal.textContent = `${clamped}%`;
+}
+
+// ---------------- Backup & Restore ----------------
+
+function exportBackup() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    favorites: loadFavorites(),
+    progress: loadAllProgress(),
+    history: loadHistory(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  triggerBlobDownload(blob, `rinseki-backup-${stamp}.json`);
+  showToast("已导出收藏与阅读进度备份");
+}
+
+async function importBackupFile(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object") throw new Error("无效的备份文件");
+
+    if (Array.isArray(data.favorites)) {
+      const existing = loadFavorites();
+      const map = new Map(existing.map((i) => [String(i.id), i]));
+      for (const item of data.favorites) {
+        if (item?.id && !map.has(String(item.id))) {
+          map.set(String(item.id), item);
+        }
+      }
+      localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify([...map.values()].slice(0, 200)));
+      renderFavorites();
+    }
+
+    if (data.progress && typeof data.progress === "object") {
+      const merged = { ...loadAllProgress(), ...data.progress };
+      localStorage.setItem(STORAGE_KEYS.PROGRESS, JSON.stringify(merged));
+    }
+
+    if (Array.isArray(data.history)) {
+      const existing = loadHistory();
+      const map = new Map(existing.map((i) => [String(i.id), i]));
+      for (const item of data.history) {
+        if (item?.id && !map.has(String(item.id))) {
+          map.set(String(item.id), item);
+        }
+      }
+      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify([...map.values()].slice(0, 24)));
+      renderHistory();
+    }
+
+    showToast("备份导入成功，已合并收藏与进度");
+  } catch (err) {
+    showAlert(`导入备份失败：${err.message}`);
+  }
 }
 
 // ---------------- Favorites & Progress & History ----------------
@@ -448,6 +551,7 @@ async function checkAuthStatus() {
   } else {
     showAppShell();
     await handleRouteFromHash();
+    if (!state.discoverLoaded) loadDiscover(state.discoverTab, 1);
   }
 }
 
@@ -471,6 +575,7 @@ async function handleLogin(event) {
     els.authPasswordInput.value = "";
     showAppShell();
     await handleRouteFromHash();
+    if (!state.discoverLoaded) loadDiscover(state.discoverTab, 1);
   } catch (err) {
     els.authError.textContent = err.message;
     els.authError.classList.remove("hidden");
@@ -498,7 +603,9 @@ function switchView(name) {
   const isReader = name === "reader";
   document.body.classList.toggle("in-reader", isReader);
   if (!isReader) {
+    stopAutoScroll();
     document.body.classList.remove("immersive-reader");
+    if (els.readerToolsDrawer) els.readerToolsDrawer.classList.add("hidden");
     disconnectPageObserver();
   }
   state.currentView = name;
@@ -512,52 +619,42 @@ function switchView(name) {
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 
-// ---------------- Search ----------------
+// ---------------- Discover / Rankings ----------------
 
-async function performSearch(query, page = 1, mode = "auto", { updateHash = true } = {}) {
-  const q = query.trim();
-  if (!q) return;
-
-  showAlert("");
-  els.searchInput.value = q;
-  els.heroSearchInput.value = q;
-  showLoading("正在搜索...");
-
+async function loadDiscover(tab = "week", page = 1) {
+  state.discoverTab = tab;
+  state.discoverPage = page;
+  els.discoverTabs.querySelectorAll("[data-discover-tab]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.discoverTab === tab);
+  });
+  els.discoverGrid.innerHTML = `<p class="muted">正在加载榜单...</p>`;
   try {
-    const params = new URLSearchParams({ q, page: String(page), mode });
-    const data = await apiFetch(`/api/search?${params.toString()}`);
+    const params = new URLSearchParams({ tab, page: String(page) });
+    const data = await apiFetch(`/api/discover?${params.toString()}`);
+    state.discoverLoaded = true;
+    renderComicCardGrid(els.discoverGrid, data.items);
 
-    if (data.type === "album" && data.album) {
-      openAlbumObject(data.album, { updateHash });
-      return;
+    if (data.page_count > 1) {
+      els.discoverPagination.classList.remove("hidden");
+      els.discoverPagination.innerHTML = `
+        <button class="btn btn-secondary btn-sm" type="button" data-discover-page="${data.page - 1}" ${data.page <= 1 ? "disabled" : ""}>上一页</button>
+        <span class="muted">第 ${data.page} / ${data.page_count} 页</span>
+        <button class="btn btn-secondary btn-sm" type="button" data-discover-page="${data.page + 1}" ${data.page >= data.page_count ? "disabled" : ""}>下一页</button>
+      `;
+    } else {
+      els.discoverPagination.classList.add("hidden");
     }
-
-    state.lastSearch = { query: q, page: data.page, mode };
-    if (updateHash) {
-      const hParams = new URLSearchParams({ q, p: String(data.page), mode });
-      setHash(`/search?${hParams.toString()}`);
-    }
-    renderSearchResults(data);
-    switchView("home");
   } catch (err) {
-    showAlert(err.message);
-  } finally {
-    hideLoading();
+    els.discoverGrid.innerHTML = `<p class="muted">榜单加载失败：${escapeHtml(err.message)}</p>`;
   }
 }
 
-function renderSearchResults(data) {
-  els.searchResultsSection.classList.remove("hidden");
-  els.searchResultsHeading.textContent = `“${data.query}” 的搜索结果`;
-  els.searchResultsMeta.textContent = `共 ${data.total} 条 · 第 ${data.page} / ${data.page_count} 页`;
-
-  if (!data.items || !data.items.length) {
-    els.searchResultsGrid.innerHTML = `<p class="muted">没有找到相关漫画，可以换个关键词或直接输入 JM 编号试试。</p>`;
-    els.searchPagination.classList.add("hidden");
+function renderComicCardGrid(container, items) {
+  if (!items || !items.length) {
+    container.innerHTML = `<p class="muted">暂无漫画内容。</p>`;
     return;
   }
-
-  els.searchResultsGrid.innerHTML = data.items
+  container.innerHTML = items
     .map((item) => {
       const tagsHtml = (item.tags || [])
         .slice(0, 4)
@@ -581,6 +678,56 @@ function renderSearchResults(data) {
       `;
     })
     .join("");
+}
+
+// ---------------- Search ----------------
+
+async function performSearch(query, page = 1, mode = "auto", { updateHash = true, orderBy } = {}) {
+  const q = query.trim();
+  if (!q) return;
+  const sortOrder = orderBy || els.searchOrderSelect?.value || "mr";
+
+  showAlert("");
+  els.searchInput.value = q;
+  els.heroSearchInput.value = q;
+  showLoading("正在搜索...");
+
+  try {
+    const params = new URLSearchParams({ q, page: String(page), mode, order_by: sortOrder });
+    const data = await apiFetch(`/api/search?${params.toString()}`);
+
+    if (data.type === "album" && data.album) {
+      openAlbumObject(data.album, { updateHash });
+      return;
+    }
+
+    state.lastSearch = { query: q, page: data.page, mode, orderBy: sortOrder };
+    if (els.searchOrderSelect) els.searchOrderSelect.value = sortOrder;
+    if (updateHash) {
+      const hParams = new URLSearchParams({ q, p: String(data.page), mode, order_by: sortOrder });
+      setHash(`/search?${hParams.toString()}`);
+    }
+    renderSearchResults(data);
+    switchView("home");
+  } catch (err) {
+    showAlert(err.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderSearchResults(data) {
+  els.searchResultsSection.classList.remove("hidden");
+  els.searchResultsHeading.textContent = `“${data.query}” 的搜索结果`;
+  els.searchResultsMeta.textContent = `共 ${data.total} 条 · 第 ${data.page} / ${data.page_count} 页`;
+
+  if (!data.items || !data.items.length) {
+    els.searchResultsGrid.innerHTML = `<p class="muted">没有找到相关漫画，可以换个关键词或直接输入 JM 编号试试。</p>`;
+    els.searchPagination.classList.add("hidden");
+    return;
+  }
+
+  renderComicCardGrid(els.searchResultsGrid, data.items);
 
   if (data.page_count > 1) {
     els.searchPagination.classList.remove("hidden");
@@ -612,6 +759,8 @@ async function loadAlbum(albumId, { updateHash = true } = {}) {
 function openAlbumObject(album, { updateHash = true } = {}) {
   state.currentAlbum = album;
   state.chapterDescending = false;
+  state.batchMode = false;
+  state.selectedChapters = new Set();
   saveToHistory(album);
   if (updateHash) {
     setHash(`/album/${encodeURIComponent(album.id)}`);
@@ -621,10 +770,18 @@ function openAlbumObject(album, { updateHash = true } = {}) {
 }
 
 function renderAlbumDetail(album) {
-  const authorsText = album.authors?.length ? album.authors.join(" / ") : "未知作者";
+  const authorsHtml = album.authors?.length
+    ? album.authors
+        .map(
+          (a) =>
+            `<button class="author-link" type="button" data-search-author="${escapeHtml(a)}">${escapeHtml(a)}</button>`
+        )
+        .join(" / ")
+    : "<strong>未知作者</strong>";
+
   const metaParts = [
     `<span class="meta-chip">编号 <strong>JM${escapeHtml(album.id)}</strong></span>`,
-    `<span class="meta-chip">作者 <strong>${escapeHtml(authorsText)}</strong></span>`,
+    `<span class="meta-chip">作者 ${authorsHtml}</span>`,
     `<span class="meta-chip">章节 <strong>${album.chapter_count} 话</strong></span>`,
   ];
   if (album.page_count) {
@@ -642,21 +799,73 @@ function renderAlbumDetail(album) {
     : album.chapters || [];
 
   const chaptersHtml = orderedChapters
-    .map(
-      (ch) => `
+    .map((ch) => {
+      const checked = state.selectedChapters.has(String(ch.photo_id)) ? "checked" : "";
+      const checkboxHtml = state.batchMode
+        ? `<input class="chapter-checkbox" type="checkbox" data-batch-ch="${escapeHtml(ch.photo_id)}" ${checked} />`
+        : "";
+      return `
       <div class="chapter-item">
         <div class="chapter-item-main">
+          ${checkboxHtml}
           <span class="chapter-num">${String(ch.index).padStart(2, "0")}</span>
           <span class="chapter-item-title" title="${escapeHtml(ch.title)}">${escapeHtml(ch.title)}</span>
         </div>
         <div class="chapter-item-actions">
           <button class="btn btn-secondary btn-xs" type="button" data-read-photo="${escapeHtml(ch.photo_id)}">预览</button>
           <button class="btn btn-ghost btn-xs" type="button" data-zip-chapter="${escapeHtml(ch.photo_id)}" data-zip-chapter-title="${escapeHtml(ch.title)}">ZIP</button>
+          <button class="btn btn-ghost btn-xs" type="button" data-pdf-chapter="${escapeHtml(ch.photo_id)}" data-pdf-chapter-title="${escapeHtml(ch.title)}">PDF</button>
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+
+  const batchBarHtml =
+    state.batchMode && album.chapter_count > 1
+      ? `
+      <div class="batch-bar">
+        <span class="muted">已勾选 <strong>${state.selectedChapters.size}</strong> / ${album.chapter_count} 话</span>
+        <div class="chapter-panel-tools">
+          <button class="btn btn-ghost btn-xs" type="button" id="batchSelectAllBtn">全选</button>
+          <button class="btn btn-ghost btn-xs" type="button" id="batchClearBtn">清空</button>
+          <button class="btn btn-primary btn-xs" type="button" id="batchDownloadZipBtn" ${state.selectedChapters.size ? "" : "disabled"}>打包已选 ZIP</button>
+          <button class="btn btn-secondary btn-xs" type="button" id="batchDownloadPdfBtn" ${state.selectedChapters.size ? "" : "disabled"}>打包已选 PDF</button>
         </div>
       </div>
     `
-    )
-    .join("");
+      : "";
+
+  const relatedHtml =
+    album.related && album.related.length
+      ? `
+      <div class="related-panel">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h2>相关推荐</h2>
+          </div>
+          <span class="meta-pill">${album.related.length} 本</span>
+        </div>
+        <div class="comic-grid">
+          ${album.related
+            .map(
+              (item) => `
+            <article class="comic-card" data-album-id="${escapeHtml(item.id)}">
+              <div class="comic-cover-wrap">
+                <img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(item.title)}" loading="lazy" />
+                <span class="comic-id-badge">JM${escapeHtml(item.id)}</span>
+              </div>
+              <div class="comic-card-body">
+                <div class="comic-card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+              </div>
+            </article>
+          `
+            )
+            .join("")}
+        </div>
+      </div>
+    `
+      : "";
 
   const savedProg = getAlbumProgress(album.id);
   const firstPhotoId = album.chapters?.[0]?.photo_id || album.id;
@@ -690,7 +899,11 @@ function renderAlbumDetail(album) {
             </button>
             <button class="btn btn-secondary btn-lg" type="button" id="downloadAlbumZipBtn">
               ${ICONS.download}
-              <span>${album.chapter_count > 1 ? `整本 ZIP（${album.chapter_count} 话）` : "下载 ZIP"}</span>
+              <span>${album.chapter_count > 1 ? `整本 ZIP` : "下载 ZIP"}</span>
+            </button>
+            <button class="btn btn-secondary btn-lg" type="button" id="downloadAlbumPdfBtn">
+              ${ICONS.download}
+              <span>${album.chapter_count > 1 ? `整本 PDF` : "下载 PDF"}</span>
             </button>
             <button class="btn btn-secondary btn-lg btn-fav ${fav ? "active" : ""}" type="button" id="toggleFavBtn">
               ${fav ? ICONS.heartFilled : ICONS.heart}
@@ -710,11 +923,15 @@ function renderAlbumDetail(album) {
         <h2>章节目录</h2>
         <div class="chapter-panel-tools">
           <span class="meta-pill">共 ${album.chapter_count} 话</span>
+          ${album.chapter_count > 1 ? `<button class="btn btn-ghost btn-xs" type="button" id="toggleBatchModeBtn">${state.batchMode ? "退出多选" : "多选打包"}</button>` : ""}
           ${album.chapter_count > 1 ? `<button class="btn btn-ghost btn-xs" type="button" id="sortChaptersBtn">${state.chapterDescending ? "倒序 ↓" : "正序 ↑"}</button>` : ""}
         </div>
       </div>
+      ${batchBarHtml}
       <div class="chapter-list">${chaptersHtml}</div>
     </div>
+
+    ${relatedHtml}
   `;
 }
 
@@ -768,6 +985,64 @@ function recordCurrentPageProgress(pageNumber) {
   saveReadProgress(albumId, state.currentPhoto.photo_id, chIdx >= 0 ? chIdx + 1 : 1, pageNumber);
 }
 
+function stopAutoScroll() {
+  state.autoScrollActive = false;
+  if (state.autoScrollRaf) {
+    cancelAnimationFrame(state.autoScrollRaf);
+    state.autoScrollRaf = null;
+  }
+  if (els.autoScrollBtn) els.autoScrollBtn.textContent = "自动滚动：关";
+}
+
+function startAutoScroll() {
+  if (state.readerMode !== "scroll") {
+    showToast("自动滚动仅在条漫模式下可用");
+    return;
+  }
+  state.autoScrollActive = true;
+  if (els.autoScrollBtn) els.autoScrollBtn.textContent = "自动滚动：开";
+  const speeds = [0.65, 1.35, 2.4]; // px per frame
+  const step = () => {
+    if (!state.autoScrollActive || state.currentView !== "reader" || state.readerMode !== "scroll") {
+      stopAutoScroll();
+      return;
+    }
+    const maxY = document.documentElement.scrollHeight - window.innerHeight;
+    if (window.scrollY >= maxY - 2) {
+      stopAutoScroll();
+      showToast("已滚动至本话底部");
+      return;
+    }
+    window.scrollBy(0, speeds[state.autoScrollSpeedIdx] || 1.35);
+    state.autoScrollRaf = requestAnimationFrame(step);
+  };
+  state.autoScrollRaf = requestAnimationFrame(step);
+}
+
+function syncReaderSlider(pageNumber, total) {
+  if (!els.readerPageSlider || !els.readerSliderVal) return;
+  els.readerPageSlider.max = String(Math.max(1, total));
+  els.readerPageSlider.value = String(Math.max(1, Math.min(total, pageNumber)));
+  els.readerSliderVal.textContent = `${pageNumber} / ${total}`;
+}
+
+function jumpToReaderPage(pageNumber) {
+  const photo = state.currentPhoto;
+  if (!photo || !photo.pages.length) return;
+  const total = photo.pages.length;
+  const clamped = Math.max(1, Math.min(total, Number(pageNumber) || 1));
+  if (state.readerMode === "scroll") {
+    const targetBox = els.readerCanvas.querySelector(`[data-page-index="${clamped - 1}"]`);
+    if (targetBox) targetBox.scrollIntoView({ behavior: "smooth", block: "start" });
+    els.readerProgressText.textContent = `${clamped} / ${total}`;
+    syncReaderSlider(clamped, total);
+    recordCurrentPageProgress(clamped);
+  } else {
+    state.singlePageIndex = clamped - 1;
+    renderSinglePage();
+  }
+}
+
 function renderReaderToolbar() {
   const photo = state.currentPhoto;
   const album = state.currentAlbum;
@@ -789,12 +1064,21 @@ function renderReaderToolbar() {
   els.prevChapterBtn.disabled = idx <= 0;
   els.nextChapterBtn.disabled = idx < 0 || !album || idx >= album.chapters.length - 1;
 
+  // Fallback double -> single on narrow mobile
+  if (state.deviceType === "mobile" && state.readerMode === "double") {
+    state.readerMode = "single";
+  }
+
   els.modeScrollBtn.classList.toggle("active", state.readerMode === "scroll");
   els.modeSingleBtn.classList.toggle("active", state.readerMode === "single");
-  els.singlePageControls.classList.toggle("hidden", state.readerMode !== "single");
+  if (els.modeDoubleBtn) els.modeDoubleBtn.classList.toggle("active", state.readerMode === "double");
+  els.singlePageControls.classList.toggle("hidden", state.readerMode === "scroll");
+  if (els.readerRtlBtn) els.readerRtlBtn.textContent = state.readerRtl ? "双页：右→左" : "双页：左→右";
 
   els.readerWidthSlider.value = String(state.readerWidth);
-  document.documentElement.style.setProperty("--reader-width", `${state.readerWidth}%`);
+  if (state.deviceType !== "mobile") {
+    document.documentElement.style.setProperty("--reader-width", `${state.readerWidth}%`);
+  }
 }
 
 function createPageBox(page, total, isSingleMode) {
@@ -879,6 +1163,7 @@ function setupScrollPageObserver(total) {
       if (bestEntry) {
         const pageNum = Number(bestEntry.target.dataset.pageNumber || "1");
         els.readerProgressText.textContent = `${pageNum} / ${total}`;
+        syncReaderSlider(pageNum, total);
         recordCurrentPageProgress(pageNum);
       }
     },
@@ -904,6 +1189,7 @@ function renderReaderPages(initialPage = 1) {
 
   if (state.readerMode === "scroll") {
     els.readerProgressText.textContent = `${initialPage} / ${photo.page_count}`;
+    syncReaderSlider(initialPage, photo.page_count);
     recordCurrentPageProgress(initialPage);
     const frag = document.createDocumentFragment();
     for (const page of photo.pages) {
@@ -920,22 +1206,40 @@ function renderSinglePage() {
   const photo = state.currentPhoto;
   if (!photo || !photo.pages.length) return;
   const total = photo.pages.length;
+  const isDouble = state.readerMode === "double";
+  const step = isDouble ? 2 : 1;
+
   state.singlePageIndex = Math.max(0, Math.min(total - 1, state.singlePageIndex));
   const page = photo.pages[state.singlePageIndex];
 
   els.readerCanvas.innerHTML = "";
-  els.readerCanvas.appendChild(createPageBox(page, total, true));
-  els.readerProgressText.textContent = `${page.number} / ${total}`;
+  if (isDouble) {
+    const spread = document.createElement("div");
+    spread.className = `reader-spread${state.readerRtl ? " rtl" : ""}`;
+    spread.appendChild(createPageBox(page, total, true));
+    const secondPage = photo.pages[state.singlePageIndex + 1];
+    if (secondPage) {
+      spread.appendChild(createPageBox(secondPage, total, true));
+    }
+    els.readerCanvas.appendChild(spread);
+    const label = secondPage ? `${page.number}-${secondPage.number} / ${total}` : `${page.number} / ${total}`;
+    els.readerProgressText.textContent = label;
+  } else {
+    els.readerCanvas.appendChild(createPageBox(page, total, true));
+    els.readerProgressText.textContent = `${page.number} / ${total}`;
+  }
+
+  syncReaderSlider(page.number, total);
   els.jumpPageInput.max = String(total);
   els.jumpPageInput.value = String(page.number);
   els.prevPageBtn.disabled = state.singlePageIndex <= 0;
-  els.nextPageBtn.disabled = state.singlePageIndex >= total - 1;
-  els.scrollProgressBar.style.width = `${(page.number / total) * 100}%`;
+  els.nextPageBtn.disabled = state.singlePageIndex + step >= total;
+  els.scrollProgressBar.style.width = `${(Math.min(total, page.number + (isDouble ? 1 : 0)) / total) * 100}%`;
 
   recordCurrentPageProgress(page.number);
 
   // Preload next 2 pages silently
-  for (let offset = 1; offset <= 2; offset++) {
+  for (let offset = step; offset < step + 2; offset++) {
     const nextPage = photo.pages[state.singlePageIndex + offset];
     if (nextPage) {
       const pre = new Image();
@@ -946,10 +1250,11 @@ function renderSinglePage() {
 }
 
 function gotoSinglePage(index) {
-  if (state.readerMode !== "single" || !state.currentPhoto) return;
+  if (state.readerMode === "scroll" || !state.currentPhoto) return;
   const total = state.currentPhoto.pages.length;
-  if (index < 0 || index >= total) return;
-  state.singlePageIndex = index;
+  const clamped = Math.max(0, Math.min(total - 1, index));
+  if (clamped === state.singlePageIndex) return;
+  state.singlePageIndex = clamped;
   renderSinglePage();
 }
 
@@ -1152,6 +1457,117 @@ async function downloadSingleChapterAsZip(photoId, chapterTitle) {
   );
 }
 
+async function runPdfDownload(chaptersToFetch, pdfFilename, label) {
+  if (state.downloading) {
+    showToast("已有正在进行的下载任务，请稍候");
+    return;
+  }
+
+  state.downloading = true;
+  const controller = new AbortController();
+  state.downloadController = controller;
+  const { signal } = controller;
+
+  updateDownloadDock({
+    visible: true,
+    title: label,
+    status: "正在获取章节清单...",
+    percent: 2,
+  });
+
+  try {
+    const tasks = [];
+    for (let cIdx = 0; cIdx < chaptersToFetch.length; cIdx++) {
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      const ch = chaptersToFetch[cIdx];
+      updateDownloadDock({ status: `获取章节清单 (${cIdx + 1}/${chaptersToFetch.length})...` });
+      const photo = await apiFetch(`/api/photo/${encodeURIComponent(ch.photo_id)}`);
+      for (const page of photo.pages) {
+        tasks.push({ url: page.url });
+      }
+    }
+    if (!tasks.length) throw new Error("未找到可下载的图片");
+
+    const blobs = new Array(tasks.length);
+    const total = tasks.length;
+    let completed = 0;
+    let failed = 0;
+    let cursor = 0;
+
+    const worker = async () => {
+      while (cursor < total) {
+        if (signal.aborted) return;
+        const idx = cursor++;
+        try {
+          blobs[idx] = await fetchBlobWithRetry(tasks[idx].url, signal, 2);
+        } catch (err) {
+          if (signal.aborted) return;
+          failed++;
+        } finally {
+          completed++;
+          updateDownloadDock({
+            status: `下载图片 ${completed}/${total}${failed ? `（失败 ${failed}）` : ""}`,
+            percent: 5 + (completed / total) * 75,
+          });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(3, total) }, () => worker()));
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const validBlobs = blobs.filter(Boolean);
+    if (!validBlobs.length) throw new Error("所有图片均下载失败，请稍后重试");
+
+    updateDownloadDock({ status: "正在浏览器中合成 PDF...", percent: 82 });
+    const pdfBlob = await createPdfBlob(validBlobs, (done, sum) => {
+      updateDownloadDock({
+        status: `正在合成 PDF (${done}/${sum})...`,
+        percent: 82 + (done / sum) * 16,
+      });
+    });
+
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    triggerBlobDownload(pdfBlob, pdfFilename);
+    updateDownloadDock({
+      status: failed ? `PDF 完成（有 ${failed} 页失败）` : "PDF 合成完成，已开始保存！",
+      percent: 100,
+    });
+    setTimeout(() => {
+      if (!state.downloading) updateDownloadDock({ visible: false });
+    }, 3500);
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      updateDownloadDock({ status: "已取消下载", percent: 0 });
+      setTimeout(() => updateDownloadDock({ visible: false }), 1500);
+    } else {
+      showAlert(`PDF 导出失败：${err.message || err}`);
+      updateDownloadDock({ visible: false });
+    }
+  } finally {
+    state.downloading = false;
+    state.downloadController = null;
+  }
+}
+
+async function downloadAlbumAsPdf(album) {
+  if (!album?.chapters?.length) return;
+  const filename = `[JM${album.id}] ${sanitizeFilename(album.title)}.pdf`;
+  await runPdfDownload(album.chapters, filename, `整本 PDF：JM${album.id}`);
+}
+
+async function downloadSingleChapterAsPdf(photoId, chapterTitle) {
+  const album = state.currentAlbum;
+  const prefix = album ? `[JM${album.id}] ${sanitizeFilename(album.title)} - ` : "";
+  const safeChapter = sanitizeFilename(chapterTitle || `章节${photoId}`);
+  const filename = `${prefix}${safeChapter}.pdf`;
+  await runPdfDownload(
+    [{ photo_id: photoId, title: chapterTitle }],
+    filename,
+    `单话 PDF：${chapterTitle || photoId}`
+  );
+}
+
 // ---------------- Event Binding ----------------
 
 function bindEvents() {
@@ -1183,6 +1599,46 @@ function bindEvents() {
     localStorage.removeItem(STORAGE_KEYS.HISTORY);
     renderHistory();
     showToast("已清空浏览记录");
+  });
+
+  els.exportBackupBtn?.addEventListener("click", exportBackup);
+  els.importBackupBtn?.addEventListener("click", () => els.importBackupInput?.click());
+  els.historyImportBackupBtn?.addEventListener("click", () => els.importBackupInput?.click());
+  els.importBackupInput?.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) importBackupFile(file);
+    e.target.value = "";
+  });
+
+  els.searchOrderSelect?.addEventListener("change", () => {
+    if (state.lastSearch) {
+      performSearch(state.lastSearch.query, 1, state.lastSearch.mode, {
+        orderBy: els.searchOrderSelect.value,
+      });
+    }
+  });
+
+  els.discoverTabs?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-discover-tab]");
+    if (btn) loadDiscover(btn.dataset.discoverTab, 1);
+  });
+
+  els.discoverGrid?.addEventListener("click", (e) => {
+    const tagBtn = e.target.closest("[data-search-tag]");
+    if (tagBtn) {
+      e.stopPropagation();
+      performSearch(tagBtn.dataset.searchTag, 1, "keyword");
+      return;
+    }
+    const card = e.target.closest("[data-album-id]");
+    if (card) loadAlbum(card.dataset.albumId);
+  });
+
+  els.discoverPagination?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-discover-page]");
+    if (!btn || btn.disabled) return;
+    loadDiscover(state.discoverTab, Number(btn.dataset.discoverPage));
+    els.discoverSection.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
   els.favoritesGrid.addEventListener("click", (e) => {
@@ -1233,9 +1689,27 @@ function bindEvents() {
   });
 
   els.albumDetailContainer.addEventListener("click", async (e) => {
+    const relatedCard = e.target.closest(".related-panel [data-album-id]");
+    if (relatedCard) {
+      loadAlbum(relatedCard.dataset.albumId);
+      return;
+    }
+    const authorBtn = e.target.closest("[data-search-author]");
+    if (authorBtn) {
+      performSearch(authorBtn.dataset.searchAuthor, 1, "keyword");
+      return;
+    }
     const tagBtn = e.target.closest("[data-search-tag]");
     if (tagBtn) {
       performSearch(tagBtn.dataset.searchTag, 1, "keyword");
+      return;
+    }
+    const batchCheck = e.target.closest("[data-batch-ch]");
+    if (batchCheck) {
+      const pid = String(batchCheck.dataset.batchCh);
+      if (batchCheck.checked) state.selectedChapters.add(pid);
+      else state.selectedChapters.delete(pid);
+      renderAlbumDetail(state.currentAlbum);
       return;
     }
     const readBtn = e.target.closest("[data-read-photo]");
@@ -1252,8 +1726,54 @@ function bindEvents() {
       );
       return;
     }
+    const pdfChapterBtn = e.target.closest("[data-pdf-chapter]");
+    if (pdfChapterBtn) {
+      downloadSingleChapterAsPdf(
+        pdfChapterBtn.dataset.pdfChapter,
+        pdfChapterBtn.dataset.pdfChapterTitle
+      );
+      return;
+    }
     if (e.target.closest("#downloadAlbumZipBtn") && state.currentAlbum) {
       downloadAlbumAsZip(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#downloadAlbumPdfBtn") && state.currentAlbum) {
+      downloadAlbumAsPdf(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#toggleBatchModeBtn") && state.currentAlbum) {
+      state.batchMode = !state.batchMode;
+      if (!state.batchMode) state.selectedChapters.clear();
+      renderAlbumDetail(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#batchSelectAllBtn") && state.currentAlbum) {
+      state.currentAlbum.chapters.forEach((c) => state.selectedChapters.add(String(c.photo_id)));
+      renderAlbumDetail(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#batchClearBtn") && state.currentAlbum) {
+      state.selectedChapters.clear();
+      renderAlbumDetail(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#batchDownloadZipBtn") && state.currentAlbum) {
+      const chosen = state.currentAlbum.chapters.filter((c) =>
+        state.selectedChapters.has(String(c.photo_id))
+      );
+      if (!chosen.length) return;
+      const fname = `[JM${state.currentAlbum.id}] ${sanitizeFilename(state.currentAlbum.title)} (选${chosen.length}话).zip`;
+      runZipDownload(chosen, fname, `批量 ZIP（${chosen.length} 话）`);
+      return;
+    }
+    if (e.target.closest("#batchDownloadPdfBtn") && state.currentAlbum) {
+      const chosen = state.currentAlbum.chapters.filter((c) =>
+        state.selectedChapters.has(String(c.photo_id))
+      );
+      if (!chosen.length) return;
+      const fname = `[JM${state.currentAlbum.id}] ${sanitizeFilename(state.currentAlbum.title)} (选${chosen.length}话).pdf`;
+      runPdfDownload(chosen, fname, `批量 PDF（${chosen.length} 话）`);
       return;
     }
     if (e.target.closest("#toggleFavBtn") && state.currentAlbum) {
@@ -1303,11 +1823,76 @@ function bindEvents() {
   });
 
   els.modeSingleBtn.addEventListener("click", () => {
+    stopAutoScroll();
     state.readerMode = "single";
     document.body.classList.remove("immersive-reader");
     localStorage.setItem(STORAGE_KEYS.READER_MODE, "single");
     renderReaderToolbar();
     renderReaderPages();
+  });
+
+  els.modeDoubleBtn?.addEventListener("click", () => {
+    stopAutoScroll();
+    state.readerMode = "double";
+    document.body.classList.remove("immersive-reader");
+    localStorage.setItem(STORAGE_KEYS.READER_MODE, "double");
+    renderReaderToolbar();
+    renderReaderPages();
+  });
+
+  els.readerProgressBtn?.addEventListener("click", () => {
+    els.readerToolsDrawer?.classList.toggle("hidden");
+  });
+
+  els.readerPageSlider?.addEventListener("input", () => {
+    const val = Number(els.readerPageSlider.value);
+    const total = state.currentPhoto?.pages?.length || 1;
+    els.readerSliderVal.textContent = `${val} / ${total}`;
+  });
+
+  els.readerPageSlider?.addEventListener("change", () => {
+    jumpToReaderPage(Number(els.readerPageSlider.value));
+  });
+
+  els.readerBrightnessSlider?.addEventListener("input", () => {
+    applyBrightness(els.readerBrightnessSlider.value);
+  });
+
+  els.autoScrollBtn?.addEventListener("click", () => {
+    if (state.autoScrollActive) stopAutoScroll();
+    else startAutoScroll();
+  });
+
+  els.autoScrollSpeedBtn?.addEventListener("click", () => {
+    state.autoScrollSpeedIdx = (state.autoScrollSpeedIdx + 1) % 3;
+    const labels = ["速度：慢", "速度：中", "速度：快"];
+    els.autoScrollSpeedBtn.textContent = labels[state.autoScrollSpeedIdx];
+  });
+
+  els.readerRtlBtn?.addEventListener("click", () => {
+    state.readerRtl = !state.readerRtl;
+    localStorage.setItem(STORAGE_KEYS.READER_RTL, String(state.readerRtl));
+    renderReaderToolbar();
+    if (state.readerMode === "double") renderSinglePage();
+  });
+
+  els.readerFullscreenBtn?.addEventListener("click", async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        els.readerFullscreenBtn.textContent = "退出全屏";
+      } else {
+        await document.exitFullscreen();
+        els.readerFullscreenBtn.textContent = "全屏阅读";
+      }
+    } catch {
+      showToast("当前浏览器不支持一键全屏");
+    }
+  });
+
+  els.readerDownloadPdfBtn?.addEventListener("click", () => {
+    if (!state.currentPhoto) return;
+    downloadSingleChapterAsPdf(state.currentPhoto.photo_id, state.currentPhoto.title);
   });
 
   els.readerWidthSlider.addEventListener("input", () => {
@@ -1335,19 +1920,27 @@ function bindEvents() {
     }
   });
 
-  els.prevPageBtn.addEventListener("click", () => gotoSinglePage(state.singlePageIndex - 1));
-  els.nextPageBtn.addEventListener("click", () => gotoSinglePage(state.singlePageIndex + 1));
+  els.prevPageBtn.addEventListener("click", () => {
+    const step = state.readerMode === "double" ? 2 : 1;
+    gotoSinglePage(state.singlePageIndex - step);
+  });
+  els.nextPageBtn.addEventListener("click", () => {
+    const step = state.readerMode === "double" ? 2 : 1;
+    gotoSinglePage(state.singlePageIndex + step);
+  });
   els.jumpPageInput.addEventListener("change", () => {
     const target = Number(els.jumpPageInput.value) - 1;
     if (!Number.isNaN(target)) gotoSinglePage(target);
   });
 
-  // Keyboard navigation in single-page mode
+  // Keyboard navigation in single/double-page mode
   document.addEventListener("keydown", (e) => {
-    if (state.currentView !== "reader" || state.readerMode !== "single") return;
+    if (state.currentView !== "reader" || state.readerMode === "scroll") return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
-    if (e.key === "ArrowLeft") gotoSinglePage(state.singlePageIndex - 1);
-    if (e.key === "ArrowRight") gotoSinglePage(state.singlePageIndex + 1);
+    const step = state.readerMode === "double" ? 2 : 1;
+    const rtl = state.readerMode === "double" && state.readerRtl;
+    if (e.key === "ArrowLeft") gotoSinglePage(state.singlePageIndex + (rtl ? step : -step));
+    if (e.key === "ArrowRight") gotoSinglePage(state.singlePageIndex + (rtl ? -step : step));
   });
 
   // Mobile touch swipe in single-page mode
