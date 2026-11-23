@@ -12,8 +12,8 @@
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="icon" type="image/jpeg" href="/static/icon.jpg" />
   <link rel="apple-touch-icon" href="/static/icon.jpg" />
-  <link rel="stylesheet" href="/static/styles.css?v=6" />
-  <script type="module" src="/static/app.js?v=6" defer></script>
+  <link rel="stylesheet" href="/static/styles.css?v=7" />
+  <script type="module" src="/static/app.js?v=7" defer></script>
 </head>
 <body>
   <!-- Subtle Ambient Background Glow -->
@@ -85,6 +85,24 @@
         </form>
 
         <div class="topbar-actions">
+          <div class="skin-picker-wrap">
+            <button id="skinPickerBtn" class="btn btn-ghost btn-icon" type="button" title="切换主题皮肤" aria-label="切换主题皮肤">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="13.5" cy="6.5" r="0.5" fill="currentColor"></circle>
+                <circle cx="17.5" cy="10.5" r="0.5" fill="currentColor"></circle>
+                <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor"></circle>
+                <circle cx="6.5" cy="12.5" r="0.5" fill="currentColor"></circle>
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+              </svg>
+            </button>
+            <div id="skinPopover" class="skin-popover hidden">
+              <button class="skin-option" type="button" data-skin="lavender"><span class="skin-swatch" style="background:linear-gradient(135deg,#8b5cf6,#ec4899)"></span>薰衣草紫</button>
+              <button class="skin-option" type="button" data-skin="sakura"><span class="skin-swatch" style="background:linear-gradient(135deg,#f472b6,#fb7185)"></span>樱花粉</button>
+              <button class="skin-option" type="button" data-skin="ocean"><span class="skin-swatch" style="background:linear-gradient(135deg,#38bdf8,#6366f1)"></span>深海蓝</button>
+              <button class="skin-option" type="button" data-skin="matcha"><span class="skin-swatch" style="background:linear-gradient(135deg,#34d399,#10b981)"></span>抹茶绿</button>
+              <button class="skin-option" type="button" data-skin="oled"><span class="skin-swatch" style="background:linear-gradient(135deg,#000000,#3f3f46)"></span>极夜纯黑</button>
+            </div>
+          </div>
           <button id="themeToggleBtn" class="btn btn-ghost btn-icon" type="button" title="切换暗色/浅色主题" aria-label="切换主题">
             <span id="themeIcon"></span>
           </button>
@@ -130,9 +148,9 @@
             </div>
           </form>
           <div class="hero-hints">
-            <span class="hint-badge">编号直达 <code>422866</code></span>
-            <span class="hint-badge">前缀识别 <code>JM422866</code></span>
-            <span class="hint-badge">关键词 / 标签搜索</span>
+            <button id="openBlindBoxBtn" class="fun-pill" type="button">🎲 今日盲盒</button>
+            <button id="openTagBuilderBtn" class="fun-pill" type="button">🏷️ XP 标签组合</button>
+            <button id="openTasteReportBtn" class="fun-pill" type="button">📊 口味成分报告</button>
           </div>
         </div>
 
@@ -322,6 +340,17 @@
     <div class="loading-box">
       <div class="spinner"></div>
       <span id="loadingText">正在加载...</span>
+    </div>
+  </div>
+
+  <!-- Fun Feature Modal (Blind Box / Tag Builder / Taste Report) -->
+  <div id="featureModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="featureModalTitle">功能面板</h3>
+        <button id="closeFeatureModalBtn" class="btn btn-ghost btn-xs" type="button" aria-label="关闭">✕</button>
+      </div>
+      <div id="featureModalBody" class="modal-body"></div>
     </div>
   </div>
 

@@ -3,6 +3,7 @@ import { createPdfBlob } from "./pdf.js";
 
 const STORAGE_KEYS = {
   THEME: "jm_theme",
+  SKIN: "jm_skin",
   HISTORY: "jm_history_v1",
   FAVORITES: "jm_favorites_v1",
   PROGRESS: "jm_read_progress_v1",
@@ -55,9 +56,18 @@ const els = {
   headerSearchForm: $("headerSearchForm"),
   searchModeSelect: $("searchModeSelect"),
   searchInput: $("searchInput"),
+  skinPickerBtn: $("skinPickerBtn"),
+  skinPopover: $("skinPopover"),
   themeToggleBtn: $("themeToggleBtn"),
   themeIcon: $("themeIcon"),
   logoutBtn: $("logoutBtn"),
+  openBlindBoxBtn: $("openBlindBoxBtn"),
+  openTagBuilderBtn: $("openTagBuilderBtn"),
+  openTasteReportBtn: $("openTasteReportBtn"),
+  featureModal: $("featureModal"),
+  featureModalTitle: $("featureModalTitle"),
+  featureModalBody: $("featureModalBody"),
+  closeFeatureModalBtn: $("closeFeatureModalBtn"),
 
   globalAlert: $("globalAlert"),
   viewHome: $("viewHome"),
@@ -308,9 +318,23 @@ function applyTheme(theme) {
   els.themeIcon.innerHTML = finalTheme === "dark" ? ICONS.sun : ICONS.moon;
 }
 
+function applySkin(skin) {
+  const valid = ["lavender", "sakura", "ocean", "matcha", "oled"];
+  const chosen = valid.includes(skin) ? skin : "lavender";
+  document.documentElement.setAttribute("data-skin", chosen);
+  localStorage.setItem(STORAGE_KEYS.SKIN, chosen);
+  if (chosen === "oled") {
+    applyTheme("dark");
+  }
+  els.skinPopover?.querySelectorAll("[data-skin]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.skin === chosen);
+  });
+}
+
 function initTheme() {
   const saved = localStorage.getItem(STORAGE_KEYS.THEME) || "dark";
   applyTheme(saved);
+  applySkin(localStorage.getItem(STORAGE_KEYS.SKIN) || "lavender");
   applyBrightness(state.readerBrightness);
 }
 
@@ -411,6 +435,7 @@ function toggleFavorite(album) {
         id: String(album.id),
         title: album.title || `JM${album.id}`,
         cover_url: album.cover_url || `/api/cover/${album.id}`,
+        tags: Array.isArray(album.tags) ? album.tags.slice(0, 12) : [],
         ts: Date.now(),
       },
       ...list,
@@ -501,9 +526,10 @@ function saveToHistory(album) {
   list.unshift({
     id: String(album.id),
     title: album.title || `JM${album.id}`,
+    tags: Array.isArray(album.tags) ? album.tags.slice(0, 12) : [],
     ts: Date.now(),
   });
-  localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(list.slice(0, 16)));
+  localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(list.slice(0, 24)));
   renderHistory();
 }
 
@@ -1568,6 +1594,184 @@ async function downloadSingleChapterAsPdf(photoId, chapterTitle) {
   );
 }
 
+// ---------------- Fun Features: Blind Box / Tag Builder / Taste Report ----------------
+
+function openFeatureModal(title, html) {
+  els.featureModalTitle.textContent = title;
+  els.featureModalBody.innerHTML = html;
+  els.featureModal.classList.remove("hidden");
+}
+
+function closeFeatureModal() {
+  els.featureModal.classList.add("hidden");
+}
+
+async function openBlindBox() {
+  openFeatureModal(
+    "🎲 今日随机盲盒",
+    `<div class="blindbox-stage"><div class="spinner"></div><p class="muted">正在从热门书库抽取一本...</p></div>`
+  );
+  try {
+    const tabs = ["week", "month", "all"];
+    const tab = tabs[Math.floor(Math.random() * tabs.length)];
+    const page = Math.floor(Math.random() * 4) + 1;
+    const data = await apiFetch(`/api/discover?tab=${tab}&page=${page}`);
+    const items = data.items || [];
+    if (!items.length) throw new Error("暂未抽到漫画，请再试一次");
+    const pick = items[Math.floor(Math.random() * items.length)];
+    const tagsHtml = (pick.tags || [])
+      .slice(0, 6)
+      .map((t) => `<span class="tag">${escapeHtml(t)}</span>`)
+      .join("");
+
+    els.featureModalBody.innerHTML = `
+      <div class="blindbox-stage">
+        <div class="blindbox-cover-wrap">
+          <img src="${escapeHtml(pick.cover_url)}" alt="${escapeHtml(pick.title)}" />
+        </div>
+        <span class="meta-pill">JM${escapeHtml(pick.id)}</span>
+        <div class="blindbox-title">${escapeHtml(pick.title)}</div>
+        ${tagsHtml ? `<div class="tag-list" style="justify-content:center">${tagsHtml}</div>` : ""}
+        <div class="blindbox-actions">
+          <button class="btn btn-primary" type="button" id="blindboxOpenBtn" data-album-id="${escapeHtml(pick.id)}">立即开看</button>
+          <button class="btn btn-secondary" type="button" id="blindboxRerollBtn">🎲 再抽一本</button>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    els.featureModalBody.innerHTML = `
+      <div class="blindbox-stage">
+        <p class="muted">抽取失败：${escapeHtml(err.message)}</p>
+        <button class="btn btn-secondary" type="button" id="blindboxRerollBtn">重试</button>
+      </div>
+    `;
+  }
+}
+
+const PRESET_TAGS = [
+  "純愛", "無修正", "漢化", "全彩", "巨乳", "貧乳", "黑絲", "白絲",
+  "制服", "女僕", "蘿莉", "御姐", "人妻", "百合", "後宮", "單行本",
+  "短篇", "同人", "原神", "碧藍檔案", "崩壞", "NTR", "重口", "獵奇",
+];
+const tagBuilderState = new Map(); // tag -> "include" | "exclude"
+
+function buildTagQueryString() {
+  const parts = [];
+  for (const [tag, mode] of tagBuilderState.entries()) {
+    parts.push(`${mode === "include" ? "+" : "-"}${tag}`);
+  }
+  return parts.join(" ");
+}
+
+function renderTagBuilderModal() {
+  const query = buildTagQueryString();
+  const allTags = [...new Set([...PRESET_TAGS, ...tagBuilderState.keys()])];
+  const chipsHtml = allTags
+    .map((tag) => {
+      const m = tagBuilderState.get(tag) || "";
+      const prefix = m === "include" ? "+ " : m === "exclude" ? "- " : "";
+      return `<button class="tb-chip ${m}" type="button" data-tb-tag="${escapeHtml(tag)}">${prefix}${escapeHtml(tag)}</button>`;
+    })
+    .join("");
+
+  openFeatureModal(
+    "🏷️ XP 标签组合器",
+    `
+      <p class="muted" style="margin:0 0 10px;font-size:13px">点击标签循环切换：<strong>未选 → 必须包含 (+) → 排除 (-)</strong></p>
+      <div class="tag-builder-preview">
+        <code>${escapeHtml(query || "点击下方标签组合精准搜索语句...")}</code>
+        ${query ? `<button class="btn btn-ghost btn-xs" type="button" id="tbClearBtn">清空</button>` : ""}
+      </div>
+      <div class="tag-builder-custom">
+        <input id="tbCustomInput" type="text" placeholder="添加自定义标签，例如 魔法少女..." />
+        <button class="btn btn-secondary btn-sm" type="button" id="tbAddCustomBtn">加入 (+)</button>
+      </div>
+      <div class="tag-builder-pool">${chipsHtml}</div>
+      <button class="btn btn-primary" style="width:100%" type="button" id="tbSearchNowBtn" ${query ? "" : "disabled"}>按此组合精准搜索</button>
+    `
+  );
+}
+
+function openTasteReport() {
+  const favs = loadFavorites();
+  const history = loadHistory();
+  const progress = loadAllProgress();
+
+  const tagCounts = new Map();
+  const addTags = (list, weight) => {
+    for (const item of list) {
+      for (const tag of item.tags || []) {
+        const clean = String(tag).trim();
+        if (!clean) continue;
+        tagCounts.set(clean, (tagCounts.get(clean) || 0) + weight);
+      }
+    }
+  };
+  addTags(favs, 2);
+  addTags(history, 1);
+
+  const sortedTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const maxScore = sortedTags[0]?.[1] || 1;
+
+  const totalAlbums = new Set([
+    ...favs.map((i) => String(i.id)),
+    ...history.map((i) => String(i.id)),
+    ...Object.keys(progress),
+  ]).size;
+  const totalPages = Object.values(progress).reduce((sum, p) => sum + (Number(p?.pageNumber) || 0), 0);
+
+  let persona = "萌新探索者";
+  const topTag = sortedTags[0]?.[0] || "";
+  if (totalAlbums >= 20) persona = "资深本子鉴赏家";
+  else if (favs.length >= 8) persona = "仓鼠型收藏大师";
+  else if (topTag.includes("純愛") || topTag.includes("纯爱")) persona = "纯爱战神";
+  else if (topTag.includes("全彩")) persona = "视觉系鉴赏师";
+  else if (totalPages >= 150) persona = "深夜修仙选手";
+
+  const barsHtml = sortedTags.length
+    ? sortedTags
+        .map(([tag, score]) => {
+          const pct = Math.max(12, Math.round((score / maxScore) * 100));
+          return `
+            <div class="taste-bar-row">
+              <div class="taste-bar-meta">
+                <span>${escapeHtml(tag)}</span>
+                <span class="muted">偏好度 ${pct}%</span>
+              </div>
+              <div class="taste-bar-track"><div class="taste-bar-fill" style="width:${pct}%"></div></div>
+            </div>
+          `;
+        })
+        .join("")
+    : `<p class="muted" style="text-align:center">多浏览或收藏几本漫画后，这里就会自动生成你的专属 XP 成分分析哦～</p>`;
+
+  openFeatureModal(
+    "📊 Rinseki 口味成分报告",
+    `
+      <div class="taste-badge-card">
+        <div class="muted" style="font-size:12px">你的专属阅读称号</div>
+        <div class="taste-title text-gradient">${escapeHtml(persona)}</div>
+        <div class="muted" style="font-size:12px">仅基于本机浏览与收藏记录实时分析，不上传云端</div>
+      </div>
+      <div class="taste-stats-grid">
+        <div class="taste-stat">
+          <div class="taste-stat-num">${totalAlbums}</div>
+          <div class="taste-stat-label">看过本数</div>
+        </div>
+        <div class="taste-stat">
+          <div class="taste-stat-num">${favs.length}</div>
+          <div class="taste-stat-label">我的收藏</div>
+        </div>
+        <div class="taste-stat">
+          <div class="taste-stat-num">${totalPages}</div>
+          <div class="taste-stat-label">累计翻页</div>
+        </div>
+      </div>
+      <div class="taste-bars">${barsHtml}</div>
+    `
+  );
+}
+
 // ---------------- Event Binding ----------------
 
 function bindEvents() {
@@ -1577,6 +1781,77 @@ function bindEvents() {
   els.themeToggleBtn.addEventListener("click", () => {
     const current = document.documentElement.getAttribute("data-theme") || "dark";
     applyTheme(current === "dark" ? "light" : "dark");
+  });
+
+  els.skinPickerBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    els.skinPopover?.classList.toggle("hidden");
+  });
+
+  els.skinPopover?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-skin]");
+    if (!btn) return;
+    applySkin(btn.dataset.skin);
+    els.skinPopover.classList.add("hidden");
+    showToast(`已切换皮肤：${btn.textContent.trim()}`);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (els.skinPopover && !e.target.closest(".skin-picker-wrap")) {
+      els.skinPopover.classList.add("hidden");
+    }
+  });
+
+  els.openBlindBoxBtn?.addEventListener("click", openBlindBox);
+  els.openTagBuilderBtn?.addEventListener("click", renderTagBuilderModal);
+  els.openTasteReportBtn?.addEventListener("click", openTasteReport);
+  els.closeFeatureModalBtn?.addEventListener("click", closeFeatureModal);
+  els.featureModal?.addEventListener("click", (e) => {
+    if (e.target === els.featureModal) {
+      closeFeatureModal();
+      return;
+    }
+    const openBtn = e.target.closest("#blindboxOpenBtn");
+    if (openBtn) {
+      closeFeatureModal();
+      loadAlbum(openBtn.dataset.albumId);
+      return;
+    }
+    if (e.target.closest("#blindboxRerollBtn")) {
+      openBlindBox();
+      return;
+    }
+    const tbChip = e.target.closest("[data-tb-tag]");
+    if (tbChip) {
+      const tag = tbChip.dataset.tbTag;
+      const cur = tagBuilderState.get(tag);
+      if (!cur) tagBuilderState.set(tag, "include");
+      else if (cur === "include") tagBuilderState.set(tag, "exclude");
+      else tagBuilderState.delete(tag);
+      renderTagBuilderModal();
+      return;
+    }
+    if (e.target.closest("#tbClearBtn")) {
+      tagBuilderState.clear();
+      renderTagBuilderModal();
+      return;
+    }
+    if (e.target.closest("#tbAddCustomBtn")) {
+      const input = $("tbCustomInput");
+      const val = input?.value?.trim();
+      if (val) {
+        tagBuilderState.set(val, "include");
+        renderTagBuilderModal();
+      }
+      return;
+    }
+    if (e.target.closest("#tbSearchNowBtn")) {
+      const q = buildTagQueryString();
+      if (q) {
+        closeFeatureModal();
+        performSearch(q, 1, "keyword");
+      }
+    }
   });
 
   els.brandHomeBtn.addEventListener("click", () => {
