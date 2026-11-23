@@ -406,9 +406,11 @@ class JmService:
                 data = cache_path.read_bytes()
             except Exception as cover_exc:
                 tmp_path.unlink(missing_ok=True)
-                # Fallback: try fetching the first page of the album as cover
+                # Fallback: resolve first chapter's photo_id and use page 0 as cover
                 try:
-                    return self.get_page_bytes(album_id, 0)
+                    album_info = self.get_album(album_id)
+                    first_pid = album_info["chapters"][0]["photo_id"] if album_info.get("chapters") else album_id
+                    return self.get_page_bytes(first_pid, 0)
                 except Exception:
                     if isinstance(cover_exc, JmServiceError):
                         raise cover_exc

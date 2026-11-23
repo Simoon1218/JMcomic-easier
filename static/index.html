@@ -7,8 +7,8 @@
   <title>Rinseki的本子站</title>
   <link rel="icon" type="image/jpeg" href="/static/icon.jpg" />
   <link rel="apple-touch-icon" href="/static/icon.jpg" />
-  <link rel="stylesheet" href="/static/styles.css" />
-  <script type="module" src="/static/app.js" defer></script>
+  <link rel="stylesheet" href="/static/styles.css?v=3" />
+  <script type="module" src="/static/app.js?v=3" defer></script>
 </head>
 <body>
   <!-- Subtle Ambient Background Glow -->
@@ -131,6 +131,20 @@
           </div>
         </div>
 
+        <!-- Favorites / Bookshelf -->
+        <div id="favoritesSection" class="section-block hidden">
+          <div class="section-header">
+            <div class="section-title-group">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+              </svg>
+              <h2>我的收藏</h2>
+            </div>
+            <span id="favoritesCount" class="meta-pill">0 本</span>
+          </div>
+          <div id="favoritesGrid" class="comic-grid"></div>
+        </div>
+
         <!-- History -->
         <div id="historySection" class="section-block hidden">
           <div class="section-header">
@@ -245,6 +259,9 @@
       <span id="loadingText">正在加载...</span>
     </div>
   </div>
+
+  <!-- Toast Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   <!-- Floating Download Progress Dock -->
   <div id="downloadDock" class="download-dock hidden">

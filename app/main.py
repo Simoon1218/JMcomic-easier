@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -38,6 +39,8 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.exception_handler(JmServiceError)

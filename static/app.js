@@ -3,6 +3,8 @@ import { createZipBlob } from "./zip.js";
 const STORAGE_KEYS = {
   THEME: "jm_theme",
   HISTORY: "jm_history_v1",
+  FAVORITES: "jm_favorites_v1",
+  PROGRESS: "jm_read_progress_v1",
   READER_MODE: "jm_reader_mode",
   READER_WIDTH: "jm_reader_width",
 };
@@ -14,11 +16,14 @@ const state = {
   lastSearch: null, // { query, page, mode }
   currentAlbum: null,
   currentPhoto: null,
+  chapterDescending: false,
   readerMode: localStorage.getItem(STORAGE_KEYS.READER_MODE) || "scroll", // scroll | single
   readerWidth: Number(localStorage.getItem(STORAGE_KEYS.READER_WIDTH) || "80"),
   singlePageIndex: 0,
   downloadController: null,
   downloading: false,
+  pageObserver: null,
+  suppressHashEvent: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -44,6 +49,9 @@ const els = {
   heroCard: $("heroCard"),
   heroSearchForm: $("heroSearchForm"),
   heroSearchInput: $("heroSearchInput"),
+  favoritesSection: $("favoritesSection"),
+  favoritesCount: $("favoritesCount"),
+  favoritesGrid: $("favoritesGrid"),
   historySection: $("historySection"),
   historyList: $("historyList"),
   clearHistoryBtn: $("clearHistoryBtn"),
@@ -87,6 +95,7 @@ const els = {
   scrollProgressTrack: $("scrollProgressTrack"),
   scrollProgressBar: $("scrollProgressBar"),
   backToTopBtn: $("backToTopBtn"),
+  toastContainer: $("toastContainer"),
 };
 
 const ICONS = {
@@ -94,6 +103,9 @@ const ICONS = {
   moon: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`,
   book: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>`,
   download: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`,
+  heart: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`,
+  heartFilled: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`,
+  copy: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
 };
 
 // ---------------- Utilities ----------------
@@ -114,6 +126,18 @@ function sanitizeFilename(name, fallback = "comic") {
     .trim()
     .replace(/\.+$/, "");
   return (cleaned || fallback).slice(0, 120);
+}
+
+function showToast(message) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = message;
+  els.toastContainer.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transition = "opacity 0.25s ease";
+    setTimeout(() => el.remove(), 260);
+  }, 2200);
 }
 
 function showLoading(text = "正在加载...") {
@@ -153,6 +177,62 @@ async function apiFetch(url, options = {}) {
   return resp.json();
 }
 
+// ---------------- Hash Router ----------------
+
+function setHash(hashStr) {
+  const normalized = hashStr.startsWith("#") ? hashStr : `#${hashStr}`;
+  if (window.location.hash === normalized) return;
+  state.suppressHashEvent = true;
+  window.location.hash = normalized;
+  setTimeout(() => {
+    state.suppressHashEvent = false;
+  }, 0);
+}
+
+async function handleRouteFromHash() {
+  if (state.authEnabled && !state.authenticated) return;
+  const raw = window.location.hash.replace(/^#/, "") || "/";
+
+  if (raw.startsWith("/album/")) {
+    const albumId = decodeURIComponent(raw.slice("/album/".length).split("?")[0]);
+    if (albumId) {
+      await loadAlbum(albumId, { updateHash: false });
+      return;
+    }
+  }
+
+  if (raw.startsWith("/read/")) {
+    const parts = raw.slice("/read/".length).split("/");
+    const photoId = decodeURIComponent(parts[parts.length - 1] || "");
+    const albumId = parts.length >= 2 ? decodeURIComponent(parts[0]) : "";
+    if (albumId && (!state.currentAlbum || String(state.currentAlbum.id) !== albumId)) {
+      try {
+        state.currentAlbum = await apiFetch(`/api/album/${encodeURIComponent(albumId)}`);
+      } catch {
+        // Proceed with photo only
+      }
+    }
+    if (photoId) {
+      await openReader(photoId, { updateHash: false });
+      return;
+    }
+  }
+
+  if (raw.startsWith("/search")) {
+    const qs = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
+    const params = new URLSearchParams(qs);
+    const q = params.get("q") || "";
+    const p = Number(params.get("p") || "1") || 1;
+    const mode = params.get("mode") || "auto";
+    if (q) {
+      await performSearch(q, p, mode, { updateHash: false });
+      return;
+    }
+  }
+
+  switchView("home");
+}
+
 // ---------------- Theme ----------------
 
 function applyTheme(theme) {
@@ -167,12 +247,113 @@ function initTheme() {
   applyTheme(saved);
 }
 
-// ---------------- History ----------------
+// ---------------- Favorites & Progress & History ----------------
+
+function loadFavorites() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.FAVORITES) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isFavorite(albumId) {
+  return loadFavorites().some((item) => String(item.id) === String(albumId));
+}
+
+function toggleFavorite(album) {
+  if (!album?.id) return false;
+  const list = loadFavorites();
+  const exists = list.some((item) => String(item.id) === String(album.id));
+  let next;
+  if (exists) {
+    next = list.filter((item) => String(item.id) !== String(album.id));
+    showToast("已移出收藏");
+  } else {
+    next = [
+      {
+        id: String(album.id),
+        title: album.title || `JM${album.id}`,
+        cover_url: album.cover_url || `/api/cover/${album.id}`,
+        ts: Date.now(),
+      },
+      ...list,
+    ].slice(0, 100);
+    showToast("已加入我的收藏");
+  }
+  localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(next));
+  renderFavorites();
+  return !exists;
+}
+
+function removeFavoriteById(albumId) {
+  const next = loadFavorites().filter((item) => String(item.id) !== String(albumId));
+  localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(next));
+  renderFavorites();
+  showToast("已移出收藏");
+}
+
+function renderFavorites() {
+  const list = loadFavorites();
+  if (!list.length) {
+    els.favoritesSection.classList.add("hidden");
+    els.favoritesGrid.innerHTML = "";
+    return;
+  }
+  els.favoritesSection.classList.remove("hidden");
+  els.favoritesCount.textContent = `${list.length} 本`;
+  els.favoritesGrid.innerHTML = list
+    .map(
+      (item) => `
+      <article class="comic-card" data-album-id="${escapeHtml(item.id)}">
+        <div class="comic-cover-wrap">
+          <img src="${escapeHtml(item.cover_url || `/api/cover/${item.id}`)}" alt="${escapeHtml(item.title)}" loading="lazy" />
+          <span class="comic-id-badge">JM${escapeHtml(item.id)}</span>
+          <button class="comic-card-fav-remove" type="button" data-remove-fav="${escapeHtml(item.id)}" title="取消收藏">×</button>
+        </div>
+        <div class="comic-card-body">
+          <div class="comic-card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+        </div>
+      </article>
+    `
+    )
+    .join("");
+}
+
+function loadAllProgress() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROGRESS) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getAlbumProgress(albumId) {
+  if (!albumId) return null;
+  return loadAllProgress()[String(albumId)] || null;
+}
+
+function saveReadProgress(albumId, photoId, chapterIndex, pageNumber) {
+  if (!albumId || !photoId) return;
+  const all = loadAllProgress();
+  all[String(albumId)] = {
+    photoId: String(photoId),
+    chapterIndex: Number(chapterIndex) || 1,
+    pageNumber: Math.max(1, Number(pageNumber) || 1),
+    ts: Date.now(),
+  };
+  // Keep latest 120 albums
+  const entries = Object.entries(all)
+    .sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0))
+    .slice(0, 120);
+  localStorage.setItem(STORAGE_KEYS.PROGRESS, JSON.stringify(Object.fromEntries(entries)));
+}
 
 function loadHistory() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.HISTORY);
-    const parsed = JSON.parse(raw || "[]");
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -181,9 +362,9 @@ function loadHistory() {
 
 function saveToHistory(album) {
   if (!album?.id) return;
-  const list = loadHistory().filter((item) => item.id !== album.id);
+  const list = loadHistory().filter((item) => String(item.id) !== String(album.id));
   list.unshift({
-    id: album.id,
+    id: String(album.id),
     title: album.title || `JM${album.id}`,
     ts: Date.now(),
   });
@@ -214,6 +395,7 @@ function renderHistory() {
 // ---------------- Auth ----------------
 
 function showAuthGate() {
+  document.body.classList.remove("immersive-reader");
   els.authGate.classList.remove("hidden");
   els.appShell.classList.add("hidden");
   els.authPasswordInput.focus();
@@ -233,6 +415,7 @@ async function checkAuthStatus() {
     showAuthGate();
   } else {
     showAppShell();
+    await handleRouteFromHash();
   }
 }
 
@@ -255,6 +438,7 @@ async function handleLogin(event) {
     state.authenticated = true;
     els.authPasswordInput.value = "";
     showAppShell();
+    await handleRouteFromHash();
   } catch (err) {
     els.authError.textContent = err.message;
     els.authError.classList.remove("hidden");
@@ -271,7 +455,18 @@ async function handleLogout() {
 
 // ---------------- View Switching ----------------
 
+function disconnectPageObserver() {
+  if (state.pageObserver) {
+    state.pageObserver.disconnect();
+    state.pageObserver = null;
+  }
+}
+
 function switchView(name) {
+  if (name !== "reader") {
+    document.body.classList.remove("immersive-reader");
+    disconnectPageObserver();
+  }
   state.currentView = name;
   els.viewHome.classList.toggle("hidden", name !== "home");
   els.viewAlbum.classList.toggle("hidden", name !== "album");
@@ -285,7 +480,7 @@ function switchView(name) {
 
 // ---------------- Search ----------------
 
-async function performSearch(query, page = 1, mode = "auto") {
+async function performSearch(query, page = 1, mode = "auto", { updateHash = true } = {}) {
   const q = query.trim();
   if (!q) return;
 
@@ -299,11 +494,15 @@ async function performSearch(query, page = 1, mode = "auto") {
     const data = await apiFetch(`/api/search?${params.toString()}`);
 
     if (data.type === "album" && data.album) {
-      openAlbumObject(data.album);
+      openAlbumObject(data.album, { updateHash });
       return;
     }
 
     state.lastSearch = { query: q, page: data.page, mode };
+    if (updateHash) {
+      const hParams = new URLSearchParams({ q, p: String(data.page), mode });
+      setHash(`/search?${hParams.toString()}`);
+    }
     renderSearchResults(data);
     switchView("home");
   } catch (err) {
@@ -363,12 +562,12 @@ function renderSearchResults(data) {
 
 // ---------------- Album Detail ----------------
 
-async function loadAlbum(albumId) {
+async function loadAlbum(albumId, { updateHash = true } = {}) {
   showAlert("");
   showLoading(`正在获取 JM${albumId} 详情...`);
   try {
     const album = await apiFetch(`/api/album/${encodeURIComponent(albumId)}`);
-    openAlbumObject(album);
+    openAlbumObject(album, { updateHash });
   } catch (err) {
     showAlert(err.message);
   } finally {
@@ -376,9 +575,13 @@ async function loadAlbum(albumId) {
   }
 }
 
-function openAlbumObject(album) {
+function openAlbumObject(album, { updateHash = true } = {}) {
   state.currentAlbum = album;
+  state.chapterDescending = false;
   saveToHistory(album);
+  if (updateHash) {
+    setHash(`/album/${encodeURIComponent(album.id)}`);
+  }
   renderAlbumDetail(album);
   switchView("album");
 }
@@ -400,7 +603,11 @@ function renderAlbumDetail(album) {
     )
     .join("");
 
-  const chaptersHtml = (album.chapters || [])
+  const orderedChapters = state.chapterDescending
+    ? [...(album.chapters || [])].reverse()
+    : album.chapters || [];
+
+  const chaptersHtml = orderedChapters
     .map(
       (ch) => `
       <div class="chapter-item">
@@ -417,7 +624,17 @@ function renderAlbumDetail(album) {
     )
     .join("");
 
+  const savedProg = getAlbumProgress(album.id);
   const firstPhotoId = album.chapters?.[0]?.photo_id || album.id;
+  const resumePhotoId = savedProg?.photoId || firstPhotoId;
+  const resumePage = savedProg?.pageNumber || 1;
+  const readBtnLabel = savedProg
+    ? album.chapter_count > 1
+      ? `继续阅读（第 ${savedProg.chapterIndex} 话 · P${resumePage}）`
+      : `继续阅读（第 ${resumePage} 页）`
+    : "开始在线预览";
+
+  const fav = isFavorite(album.id);
   const safeCoverUrl = escapeHtml(album.cover_url);
 
   els.albumDetailContainer.innerHTML = `
@@ -433,13 +650,21 @@ function renderAlbumDetail(album) {
           ${tagsHtml ? `<div class="tag-list">${tagsHtml}</div>` : ""}
           ${album.description ? `<p class="album-desc">${escapeHtml(album.description)}</p>` : ""}
           <div class="album-actions">
-            <button class="btn btn-primary btn-lg" type="button" id="startReadBtn" data-read-photo="${escapeHtml(firstPhotoId)}">
+            <button class="btn btn-primary btn-lg" type="button" id="startReadBtn" data-read-photo="${escapeHtml(resumePhotoId)}" data-start-page="${resumePage}">
               ${ICONS.book}
-              <span>开始在线预览</span>
+              <span>${escapeHtml(readBtnLabel)}</span>
             </button>
             <button class="btn btn-secondary btn-lg" type="button" id="downloadAlbumZipBtn">
               ${ICONS.download}
-              <span>${album.chapter_count > 1 ? `整本打包 ZIP（共 ${album.chapter_count} 话）` : "下载为 ZIP"}</span>
+              <span>${album.chapter_count > 1 ? `整本 ZIP（${album.chapter_count} 话）` : "下载 ZIP"}</span>
+            </button>
+            <button class="btn btn-secondary btn-lg btn-fav ${fav ? "active" : ""}" type="button" id="toggleFavBtn">
+              ${fav ? ICONS.heartFilled : ICONS.heart}
+              <span>${fav ? "已收藏" : "收藏"}</span>
+            </button>
+            <button class="btn btn-ghost btn-lg" type="button" id="copyAlbumIdBtn" title="复制编号和分享链接">
+              ${ICONS.copy}
+              <span>复制编号</span>
             </button>
           </div>
         </div>
@@ -449,7 +674,10 @@ function renderAlbumDetail(album) {
     <div class="chapters-panel">
       <div class="chapters-panel-header">
         <h2>章节目录</h2>
-        <span class="meta-pill">共 ${album.chapter_count} 话 · 支持单话预览与 ZIP</span>
+        <div class="chapter-panel-tools">
+          <span class="meta-pill">共 ${album.chapter_count} 话</span>
+          ${album.chapter_count > 1 ? `<button class="btn btn-ghost btn-xs" type="button" id="sortChaptersBtn">${state.chapterDescending ? "倒序 ↓" : "正序 ↑"}</button>` : ""}
+        </div>
       </div>
       <div class="chapter-list">${chaptersHtml}</div>
     </div>
@@ -458,18 +686,33 @@ function renderAlbumDetail(album) {
 
 // ---------------- Reader ----------------
 
-async function openReader(photoId) {
+async function openReader(photoId, { startPage = 1, updateHash = true } = {}) {
   showAlert("");
   showLoading("正在加载章节图片清单...");
   try {
     const photo = await apiFetch(`/api/photo/${encodeURIComponent(photoId)}`);
     state.currentPhoto = photo;
-    state.singlePageIndex = 0;
+    const total = Math.max(1, photo.pages.length);
+    state.singlePageIndex = Math.max(0, Math.min(total - 1, Number(startPage) - 1));
 
-    // Populate chapter selector if album matches
+    const albumId = state.currentAlbum?.id || photo.album_id;
+    if (updateHash) {
+      setHash(`/read/${encodeURIComponent(albumId)}/${encodeURIComponent(photo.photo_id)}`);
+    }
+
     renderReaderToolbar();
-    renderReaderPages();
+    renderReaderPages(startPage);
     switchView("reader");
+
+    // In scroll mode, jump smoothly to resumed page if > 1
+    if (state.readerMode === "scroll" && startPage > 1) {
+      requestAnimationFrame(() => {
+        const targetBox = els.readerCanvas.querySelector(`[data-page-index="${startPage - 1}"]`);
+        if (targetBox) {
+          targetBox.scrollIntoView({ behavior: "instant", block: "start" });
+        }
+      });
+    }
   } catch (err) {
     showAlert(err.message);
   } finally {
@@ -482,6 +725,13 @@ function getCurrentChapterIdx() {
   return state.currentAlbum.chapters.findIndex(
     (c) => String(c.photo_id) === String(state.currentPhoto.photo_id)
   );
+}
+
+function recordCurrentPageProgress(pageNumber) {
+  if (!state.currentPhoto) return;
+  const albumId = state.currentAlbum?.id || state.currentPhoto.album_id;
+  const chIdx = getCurrentChapterIdx();
+  saveReadProgress(albumId, state.currentPhoto.photo_id, chIdx >= 0 ? chIdx + 1 : 1, pageNumber);
 }
 
 function renderReaderToolbar() {
@@ -517,6 +767,7 @@ function createPageBox(page, total, isSingleMode) {
   const box = document.createElement("div");
   box.className = `reader-page-box${isSingleMode ? " single-mode" : ""}`;
   box.dataset.pageIndex = String(page.index);
+  box.dataset.pageNumber = String(page.number);
 
   const img = document.createElement("img");
   img.alt = `第 ${page.number} 页`;
@@ -565,6 +816,11 @@ function createPageBox(page, total, isSingleMode) {
         gotoSinglePage(state.singlePageIndex + 1);
       }
     };
+  } else {
+    // Tap image in scroll mode to toggle distraction-free immersive toolbar
+    box.onclick = () => {
+      document.body.classList.toggle("immersive-reader");
+    };
   }
 
   box.appendChild(img);
@@ -572,9 +828,38 @@ function createPageBox(page, total, isSingleMode) {
   return box;
 }
 
-function renderReaderPages() {
+function setupScrollPageObserver(total) {
+  disconnectPageObserver();
+  if (!("IntersectionObserver" in window)) return;
+
+  state.pageObserver = new IntersectionObserver(
+    (entries) => {
+      let bestEntry = null;
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+            bestEntry = entry;
+          }
+        }
+      }
+      if (bestEntry) {
+        const pageNum = Number(bestEntry.target.dataset.pageNumber || "1");
+        els.readerProgressText.textContent = `${pageNum} / ${total}`;
+        recordCurrentPageProgress(pageNum);
+      }
+    },
+    { threshold: [0.25, 0.5, 0.75] }
+  );
+
+  els.readerCanvas.querySelectorAll(".reader-page-box").forEach((el) => {
+    state.pageObserver.observe(el);
+  });
+}
+
+function renderReaderPages(initialPage = 1) {
   const photo = state.currentPhoto;
   if (!photo) return;
+  disconnectPageObserver();
   els.readerCanvas.innerHTML = "";
 
   if (!photo.pages.length) {
@@ -584,12 +869,14 @@ function renderReaderPages() {
   }
 
   if (state.readerMode === "scroll") {
-    els.readerProgressText.textContent = `共 ${photo.page_count} 页`;
+    els.readerProgressText.textContent = `${initialPage} / ${photo.page_count}`;
+    recordCurrentPageProgress(initialPage);
     const frag = document.createDocumentFragment();
     for (const page of photo.pages) {
       frag.appendChild(createPageBox(page, photo.page_count, false));
     }
     els.readerCanvas.appendChild(frag);
+    setupScrollPageObserver(photo.page_count);
   } else {
     renderSinglePage();
   }
@@ -609,6 +896,9 @@ function renderSinglePage() {
   els.jumpPageInput.value = String(page.number);
   els.prevPageBtn.disabled = state.singlePageIndex <= 0;
   els.nextPageBtn.disabled = state.singlePageIndex >= total - 1;
+  els.scrollProgressBar.style.width = `${(page.number / total) * 100}%`;
+
+  recordCurrentPageProgress(page.number);
 
   // Preload next 2 pages silently
   for (let offset = 1; offset <= 2; offset++) {
@@ -629,7 +919,7 @@ function gotoSinglePage(index) {
   renderSinglePage();
 }
 
-// ---------------- Browser-side JSZip Downloader ----------------
+// ---------------- Browser-side Zero-Dep ZIP Downloader ----------------
 
 function updateDownloadDock({ visible = true, title, status, percent }) {
   els.downloadDock.classList.toggle("hidden", !visible);
@@ -688,7 +978,7 @@ function triggerBlobDownload(blob, filename) {
 
 async function runZipDownload(chaptersToFetch, zipFilename, label) {
   if (state.downloading) {
-    showAlert("已有正在进行的 ZIP 下载任务，请等待完成或先取消当前任务。");
+    showToast("已有正在进行的下载任务，请稍候");
     return;
   }
 
@@ -705,7 +995,6 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
   });
 
   try {
-    // 1. Resolve all pages across requested chapters
     const tasks = [];
     const multiChapter = chaptersToFetch.length > 1;
     for (let cIdx = 0; cIdx < chaptersToFetch.length; cIdx++) {
@@ -731,7 +1020,6 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
       throw new Error("未找到可下载的图片");
     }
 
-    // 2. Concurrent download (max 3 workers to stay friendly to free hosting)
     const entries = new Array(tasks.length);
     const total = tasks.length;
     let completed = 0;
@@ -777,7 +1065,6 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
       throw new Error("所有图片均下载失败，请稍后重试");
     }
 
-    // 3. Package ZIP in browser memory (zero external CDN dependency)
     updateDownloadDock({
       status: "正在浏览器中打包 ZIP...",
       percent: 94,
@@ -844,6 +1131,7 @@ function bindEvents() {
 
   els.brandHomeBtn.addEventListener("click", () => {
     showAlert("");
+    setHash("/");
     switchView("home");
   });
 
@@ -860,6 +1148,18 @@ function bindEvents() {
   els.clearHistoryBtn.addEventListener("click", () => {
     localStorage.removeItem(STORAGE_KEYS.HISTORY);
     renderHistory();
+    showToast("已清空浏览记录");
+  });
+
+  els.favoritesGrid.addEventListener("click", (e) => {
+    const removeBtn = e.target.closest("[data-remove-fav]");
+    if (removeBtn) {
+      e.stopPropagation();
+      removeFavoriteById(removeBtn.dataset.removeFav);
+      return;
+    }
+    const card = e.target.closest("[data-album-id]");
+    if (card) loadAlbum(card.dataset.albumId);
   });
 
   els.historyList.addEventListener("click", (e) => {
@@ -885,10 +1185,20 @@ function bindEvents() {
   });
 
   els.backFromAlbumBtn.addEventListener("click", () => {
+    if (state.lastSearch) {
+      const hParams = new URLSearchParams({
+        q: state.lastSearch.query,
+        p: String(state.lastSearch.page),
+        mode: state.lastSearch.mode,
+      });
+      setHash(`/search?${hParams.toString()}`);
+    } else {
+      setHash("/");
+    }
     switchView("home");
   });
 
-  els.albumDetailContainer.addEventListener("click", (e) => {
+  els.albumDetailContainer.addEventListener("click", async (e) => {
     const tagBtn = e.target.closest("[data-search-tag]");
     if (tagBtn) {
       performSearch(tagBtn.dataset.searchTag, 1, "keyword");
@@ -896,7 +1206,8 @@ function bindEvents() {
     }
     const readBtn = e.target.closest("[data-read-photo]");
     if (readBtn) {
-      openReader(readBtn.dataset.readPhoto);
+      const startPage = Number(readBtn.dataset.startPage || "1") || 1;
+      openReader(readBtn.dataset.readPhoto, { startPage });
       return;
     }
     const zipChapterBtn = e.target.closest("[data-zip-chapter]");
@@ -909,14 +1220,37 @@ function bindEvents() {
     }
     if (e.target.closest("#downloadAlbumZipBtn") && state.currentAlbum) {
       downloadAlbumAsZip(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#toggleFavBtn") && state.currentAlbum) {
+      toggleFavorite(state.currentAlbum);
+      renderAlbumDetail(state.currentAlbum);
+      return;
+    }
+    if (e.target.closest("#copyAlbumIdBtn") && state.currentAlbum) {
+      const text = `JM${state.currentAlbum.id} ${window.location.href}`;
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast(`已复制 JM${state.currentAlbum.id} 与直达链接`);
+      } catch {
+        showToast(`编号：JM${state.currentAlbum.id}`);
+      }
+      return;
+    }
+    if (e.target.closest("#sortChaptersBtn") && state.currentAlbum) {
+      state.chapterDescending = !state.chapterDescending;
+      renderAlbumDetail(state.currentAlbum);
     }
   });
 
   // Reader events
   els.backFromReaderBtn.addEventListener("click", () => {
     if (state.currentAlbum) {
+      setHash(`/album/${encodeURIComponent(state.currentAlbum.id)}`);
+      renderAlbumDetail(state.currentAlbum);
       switchView("album");
     } else {
+      setHash("/");
       switchView("home");
     }
   });
@@ -931,11 +1265,12 @@ function bindEvents() {
     state.readerMode = "scroll";
     localStorage.setItem(STORAGE_KEYS.READER_MODE, "scroll");
     renderReaderToolbar();
-    renderReaderPages();
+    renderReaderPages(state.singlePageIndex + 1);
   });
 
   els.modeSingleBtn.addEventListener("click", () => {
     state.readerMode = "single";
+    document.body.classList.remove("immersive-reader");
     localStorage.setItem(STORAGE_KEYS.READER_MODE, "single");
     renderReaderToolbar();
     renderReaderPages();
@@ -973,12 +1308,39 @@ function bindEvents() {
     if (!Number.isNaN(target)) gotoSinglePage(target);
   });
 
+  // Keyboard navigation in single-page mode
   document.addEventListener("keydown", (e) => {
     if (state.currentView !== "reader" || state.readerMode !== "single") return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     if (e.key === "ArrowLeft") gotoSinglePage(state.singlePageIndex - 1);
     if (e.key === "ArrowRight") gotoSinglePage(state.singlePageIndex + 1);
   });
+
+  // Mobile touch swipe in single-page mode
+  let touchStartX = 0;
+  let touchStartY = 0;
+  els.readerCanvas.addEventListener(
+    "touchstart",
+    (e) => {
+      if (state.readerMode !== "single" || e.touches.length !== 1) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    },
+    { passive: true }
+  );
+  els.readerCanvas.addEventListener(
+    "touchend",
+    (e) => {
+      if (state.readerMode !== "single" || !e.changedTouches.length) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      const dy = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        if (dx < 0) gotoSinglePage(state.singlePageIndex + 1);
+        else gotoSinglePage(state.singlePageIndex - 1);
+      }
+    },
+    { passive: true }
+  );
 
   els.cancelDownloadBtn.addEventListener("click", () => {
     if (state.downloadController) {
@@ -998,7 +1360,7 @@ function bindEvents() {
       const y = window.scrollY || document.documentElement.scrollTop;
       els.backToTopBtn.classList.toggle("hidden", y < 420);
 
-      if (state.currentView === "reader") {
+      if (state.currentView === "reader" && state.readerMode === "scroll") {
         const doc = document.documentElement;
         const scrollable = Math.max(1, doc.scrollHeight - window.innerHeight);
         const pct = Math.min(100, Math.max(0, (y / scrollable) * 100));
@@ -1007,12 +1369,18 @@ function bindEvents() {
     },
     { passive: true }
   );
+
+  window.addEventListener("hashchange", () => {
+    if (state.suppressHashEvent) return;
+    handleRouteFromHash();
+  });
 }
 
 // ---------------- Init ----------------
 
 async function init() {
   initTheme();
+  renderFavorites();
   renderHistory();
   bindEvents();
   try {

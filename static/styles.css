@@ -1,58 +1,58 @@
 :root,
 [data-theme="dark"] {
-  --bg: #0a0c12;
-  --bg-elevated: rgba(16, 19, 28, 0.8);
-  --bg-card: #141824;
-  --bg-card-glass: rgba(20, 24, 36, 0.82);
-  --bg-hover: #1e2436;
-  --bg-input: #0e111a;
+  --bg: #0b0b14;
+  --bg-elevated: rgba(16, 17, 30, 0.82);
+  --bg-card: #141626;
+  --bg-card-glass: rgba(20, 22, 38, 0.84);
+  --bg-hover: #1e2138;
+  --bg-input: #0e101d;
   --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(167, 139, 250, 0.22);
   --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --text: #f1f4fa;
-  --text-muted: #939eb4;
-  --accent: #f97316;
-  --accent-2: #fb7185;
-  --accent-gradient: linear-gradient(135deg, #ff7a29 0%, #f97316 50%, #fb7185 100%);
-  --accent-hover: #ea580c;
-  --accent-soft: rgba(249, 115, 22, 0.14);
-  --accent-glow: rgba(249, 115, 22, 0.28);
-  --danger: #f87171;
-  --danger-soft: rgba(239, 68, 68, 0.14);
-  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.28);
-  --shadow: 0 18px 46px rgba(0, 0, 0, 0.45);
-  --shimmer-1: #181d2c;
-  --shimmer-2: #232a3e;
-  --ambient-1: rgba(249, 115, 22, 0.13);
-  --ambient-2: rgba(99, 102, 241, 0.11);
+  --text: #f3f2fa;
+  --text-muted: #9899b5;
+  --accent: #9b87f5;
+  --accent-2: #f472b6;
+  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #a855f7 52%, #ec4899 100%);
+  --accent-hover: #7c3aed;
+  --accent-soft: rgba(155, 135, 245, 0.16);
+  --accent-glow: rgba(139, 92, 246, 0.34);
+  --danger: #fb7185;
+  --danger-soft: rgba(244, 63, 94, 0.15);
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.3);
+  --shadow: 0 18px 46px rgba(0, 0, 0, 0.48);
+  --shimmer-1: #181a2e;
+  --shimmer-2: #242845;
+  --ambient-1: rgba(139, 92, 246, 0.18);
+  --ambient-2: rgba(236, 72, 153, 0.12);
 }
 
 [data-theme="light"] {
-  --bg: #f4f6fb;
-  --bg-elevated: rgba(255, 255, 255, 0.84);
+  --bg: #f6f5fc;
+  --bg-elevated: rgba(255, 255, 255, 0.86);
   --bg-card: #ffffff;
-  --bg-card-glass: rgba(255, 255, 255, 0.88);
-  --bg-hover: #eef2f9;
-  --bg-input: #f8fafd;
-  --border: rgba(15, 23, 42, 0.09);
-  --border-strong: rgba(15, 23, 42, 0.16);
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --text: #131926;
-  --text-muted: #64748b;
-  --accent: #ea580c;
-  --accent-2: #e11d48;
-  --accent-gradient: linear-gradient(135deg, #f97316 0%, #ea580c 55%, #f43f5e 100%);
-  --accent-hover: #c2410c;
-  --accent-soft: rgba(234, 88, 12, 0.1);
-  --accent-glow: rgba(234, 88, 12, 0.22);
-  --danger: #dc2626;
-  --danger-soft: rgba(220, 38, 38, 0.09);
-  --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.06);
-  --shadow: 0 16px 40px rgba(15, 23, 42, 0.09);
-  --shimmer-1: #edf1f7;
-  --shimmer-2: #e2e8f2;
-  --ambient-1: rgba(249, 115, 22, 0.09);
-  --ambient-2: rgba(99, 102, 241, 0.07);
+  --bg-card-glass: rgba(255, 255, 255, 0.9);
+  --bg-hover: #f1effb;
+  --bg-input: #f9f8fe;
+  --border: rgba(30, 27, 75, 0.09);
+  --border-strong: rgba(124, 58, 237, 0.22);
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --text: #1b1830;
+  --text-muted: #686684;
+  --accent: #7c3aed;
+  --accent-2: #db2777;
+  --accent-gradient: linear-gradient(135deg, #7c3aed 0%, #9333ea 55%, #ec4899 100%);
+  --accent-hover: #6d28d9;
+  --accent-soft: rgba(124, 58, 237, 0.11);
+  --accent-glow: rgba(124, 58, 237, 0.24);
+  --danger: #e11d48;
+  --danger-soft: rgba(225, 29, 72, 0.1);
+  --shadow-sm: 0 4px 14px rgba(30, 27, 75, 0.06);
+  --shadow: 0 16px 40px rgba(30, 27, 75, 0.1);
+  --shimmer-1: #efedf8;
+  --shimmer-2: #e4e0f4;
+  --ambient-1: rgba(139, 92, 246, 0.12);
+  --ambient-2: rgba(236, 72, 153, 0.09);
 }
 
 * {
@@ -465,7 +465,7 @@ select:focus {
   padding: 5px 14px;
   border-radius: 999px;
   background: var(--accent-soft);
-  border: 1px solid rgba(249, 115, 22, 0.25);
+  border: 1px solid rgba(155, 135, 245, 0.3);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -649,7 +649,7 @@ select:focus {
 
 .comic-card:hover {
   transform: translateY(-5px);
-  border-color: rgba(249, 115, 22, 0.55);
+  border-color: rgba(155, 135, 245, 0.6);
   box-shadow: var(--shadow);
 }
 
@@ -726,7 +726,7 @@ select:focus {
 .tag {
   background: var(--accent-soft);
   color: var(--accent);
-  border: 1px solid rgba(249, 115, 22, 0.18);
+  border: 1px solid rgba(155, 135, 245, 0.22);
   padding: 2px 9px;
   border-radius: 999px;
   font-size: 11.5px;
@@ -899,7 +899,7 @@ select:focus {
 }
 
 .chapter-item:hover {
-  border-color: rgba(249, 115, 22, 0.45);
+  border-color: rgba(155, 135, 245, 0.5);
   background: var(--bg-hover);
   transform: translateY(-1px);
 }
@@ -1271,6 +1271,88 @@ select:focus {
   font-weight: 700;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg-card-glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  animation: fadeSlideUp 0.2s ease;
+}
+
+/* Favorite & Action Helpers */
+.btn-fav.active {
+  background: var(--danger-soft);
+  border-color: rgba(244, 63, 94, 0.45);
+  color: var(--danger);
+}
+
+.comic-card-fav-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 12, 20, 0.72);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s ease, background 0.16s ease;
+}
+
+.comic-card:hover .comic-card-fav-remove,
+.comic-card-fav-remove:focus-visible {
+  opacity: 1;
+}
+
+.comic-card-fav-remove:hover {
+  background: var(--danger);
+}
+
+.chapter-panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Immersive Reader Mode (hide toolbars on tap) */
+body.immersive-reader .topbar,
+body.immersive-reader .reader-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-16px);
+}
+
+.topbar,
+.reader-toolbar {
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 /* Animations */
