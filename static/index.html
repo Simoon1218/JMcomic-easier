@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow, noarchive" />
-  <title>JMComic Easier · 在线漫画阅读器</title>
+  <title>Rinseki的本子站</title>
+  <link rel="icon" type="image/jpeg" href="/static/icon.jpg" />
+  <link rel="apple-touch-icon" href="/static/icon.jpg" />
   <link rel="stylesheet" href="/static/styles.css" />
   <script type="module" src="/static/app.js" defer></script>
 </head>
@@ -15,14 +17,11 @@
   <!-- Auth Gate -->
   <div id="authGate" class="auth-gate hidden">
     <div class="auth-card">
-      <div class="auth-logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-        </svg>
+      <div class="auth-avatar-wrap">
+        <img src="/static/icon.jpg" alt="Rinseki的本子站" class="auth-avatar" />
       </div>
-      <h1>私密访问验证</h1>
-      <p class="muted">此站点已启用口令保护，请输入访问口令以进入阅读空间。</p>
+      <h1>Rinseki的本子站</h1>
+      <p class="muted">此站点已启用私密口令保护，请输入访问口令进入。</p>
       <form id="authForm" class="auth-form">
         <div class="input-with-icon">
           <svg class="input-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -53,8 +52,8 @@
     <header class="topbar" id="mainTopbar">
       <div class="topbar-inner">
         <button class="brand" id="brandHomeBtn" type="button" title="返回首页">
-          <span class="brand-badge">JM</span>
-          <span class="brand-title">JMComic <span class="brand-accent">Easier</span></span>
+          <img src="/static/icon.jpg" alt="Rinseki的本子站" class="brand-avatar" />
+          <span class="brand-title">Rinseki<span class="brand-accent">的本子站</span></span>
         </button>
 
         <form class="header-search" id="headerSearchForm">

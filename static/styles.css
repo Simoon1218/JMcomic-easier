@@ -272,17 +272,22 @@ select:focus {
   animation: fadeSlideUp 0.32s ease;
 }
 
-.auth-logo {
-  width: 60px;
-  height: 60px;
-  border-radius: 18px;
-  background: var(--accent-gradient);
-  color: #fff;
+.auth-avatar-wrap {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
+  padding: 4px;
+  border-radius: 22px;
+  background: var(--accent-gradient);
   box-shadow: 0 10px 26px var(--accent-glow);
+  margin-bottom: 16px;
+}
+
+.auth-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  object-fit: cover;
+  display: block;
+  background: #fff;
 }
 
 .auth-card h1 {
@@ -361,14 +366,15 @@ select:focus {
   letter-spacing: -0.02em;
 }
 
-.brand-badge {
-  background: var(--accent-gradient);
-  color: #fff;
-  border-radius: 9px;
-  padding: 4px 9px;
-  font-size: 13px;
-  font-weight: 800;
+.brand-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+  border: 2px solid var(--accent);
   box-shadow: 0 4px 12px var(--accent-glow);
+  background: #fff;
 }
 
 .brand-accent {

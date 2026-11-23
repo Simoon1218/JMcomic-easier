@@ -33,7 +33,7 @@ async def run_blocking(fn: Callable[..., T], *args) -> T:
 
 
 app = FastAPI(
-    title="JMComic Web Reader",
+    title="Rinseki的本子站",
     description="Lightweight stateless comic preview, search, and browser-side ZIP downloader powered by JMComic-Crawler-Python.",
     docs_url=None,
     redoc_url=None,
