@@ -1342,6 +1342,21 @@ select:focus {
   gap: 8px;
 }
 
+/* Hide search bar during online comic preview for a clean reading experience */
+body.in-reader #headerSearchForm {
+  display: none !important;
+}
+
+body.in-reader .topbar-inner {
+  justify-content: space-between;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+body.in-reader .reader-toolbar {
+  top: 56px;
+}
+
 /* Immersive Reader Mode (hide toolbars on tap) */
 body.immersive-reader .topbar,
 body.immersive-reader .reader-toolbar {
@@ -1353,6 +1368,166 @@ body.immersive-reader .reader-toolbar {
 .topbar,
 .reader-toolbar {
   transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Device-Specific Adaptations (driven by html[data-device]) */
+html[data-touch="true"] .comic-card-fav-remove {
+  opacity: 1;
+}
+
+html[data-device="tablet"] .comic-grid {
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 14px;
+}
+
+html[data-device="tablet"] .album-card {
+  grid-template-columns: 205px 1fr;
+  gap: 22px;
+  padding: 22px;
+}
+
+html[data-device="tablet"] .reader-page-box {
+  width: min(var(--reader-width, 92%), 100%);
+}
+
+html[data-device="mobile"] .topbar {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+html[data-device="mobile"] .topbar-inner {
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  gap: 8px;
+}
+
+html[data-device="mobile"] .brand-title {
+  font-size: 14.5px;
+}
+
+html[data-device="mobile"] .header-search {
+  order: 3;
+  width: 100%;
+  max-width: 100%;
+}
+
+html[data-device="mobile"] .main-container {
+  padding: 14px 12px calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-device="mobile"] body.in-reader .main-container,
+html[data-device="mobile"] .in-reader .main-container {
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 8px;
+}
+
+html[data-device="mobile"] .hero-card {
+  padding: 26px 16px 22px;
+  border-radius: 18px;
+}
+
+html[data-device="mobile"] .hero-search-box {
+  flex-wrap: wrap;
+  padding: 8px;
+}
+
+html[data-device="mobile"] .hero-search-icon {
+  display: none;
+}
+
+html[data-device="mobile"] .hero-search-box button {
+  width: 100%;
+  min-height: 40px;
+}
+
+html[data-device="mobile"] .comic-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+html[data-device="mobile"] .comic-card {
+  border-radius: 13px;
+}
+
+html[data-device="mobile"] .comic-card-body {
+  padding: 10px;
+  gap: 6px;
+}
+
+html[data-device="mobile"] .comic-card-title {
+  font-size: 13px;
+}
+
+html[data-device="mobile"] .album-card {
+  grid-template-columns: 1fr;
+  padding: 18px 16px;
+  gap: 18px;
+}
+
+html[data-device="mobile"] .album-cover-frame {
+  max-width: 210px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+html[data-device="mobile"] .album-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+html[data-device="mobile"] .album-actions .btn-primary {
+  grid-column: 1 / -1;
+}
+
+html[data-device="mobile"] .chapter-list {
+  grid-template-columns: 1fr;
+}
+
+html[data-device="mobile"] .reader-toolbar {
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  margin: 0 8px 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  gap: 6px;
+}
+
+html[data-device="mobile"] .reader-title {
+  display: none;
+}
+
+html[data-device="mobile"] .reader-canvas {
+  gap: 2px;
+}
+
+html[data-device="mobile"] .reader-page-box {
+  width: 100% !important;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-device="mobile"] .reader-footer {
+  padding: 0 12px;
+}
+
+html[data-device="mobile"] .width-control,
+html[data-device="mobile"] .hide-xs {
+  display: none;
+}
+
+html[data-device="mobile"] .download-dock {
+  right: 12px;
+  left: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  width: auto;
+  max-width: none;
+}
+
+html[data-device="mobile"] .back-to-top {
+  right: 14px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  width: 40px;
+  height: 40px;
 }
 
 /* Animations */

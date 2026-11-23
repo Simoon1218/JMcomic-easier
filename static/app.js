@@ -10,6 +10,8 @@ const STORAGE_KEYS = {
 };
 
 const state = {
+  deviceType: "desktop", // mobile | tablet | desktop
+  isTouch: false,
   authEnabled: false,
   authenticated: false,
   currentView: "home", // home | album | reader
@@ -231,6 +233,36 @@ async function handleRouteFromHash() {
   }
 
   switchView("home");
+}
+
+// ---------------- Device Detection ----------------
+
+function detectDeviceType() {
+  const width = window.innerWidth;
+  const ua = navigator.userAgent || "";
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  const hasTouch = coarsePointer || "ontouchstart" in window || (navigator.maxTouchPoints || 0) > 0;
+  const isMobileUA = /Android.*Mobile|iPhone|iPod|Windows Phone|Mobile Safari/i.test(ua);
+  const isTabletUA = /iPad|Tablet|PlayBook|Silk/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua));
+
+  let device = "desktop";
+  if (width <= 680 || (isMobileUA && width <= 820)) {
+    device = "mobile";
+  } else if (width <= 1080 || isTabletUA || (coarsePointer && width <= 1200)) {
+    device = "tablet";
+  }
+
+  state.deviceType = device;
+  state.isTouch = hasTouch;
+  document.documentElement.setAttribute("data-device", device);
+  document.documentElement.setAttribute("data-touch", hasTouch ? "true" : "false");
+
+  // Keep reader canvas comfortable per device without overwriting user's desktop setting
+  if (device === "mobile") {
+    document.documentElement.style.setProperty("--reader-width", "100%");
+  } else {
+    document.documentElement.style.setProperty("--reader-width", `${state.readerWidth}%`);
+  }
 }
 
 // ---------------- Theme ----------------
@@ -463,16 +495,18 @@ function disconnectPageObserver() {
 }
 
 function switchView(name) {
-  if (name !== "reader") {
+  const isReader = name === "reader";
+  document.body.classList.toggle("in-reader", isReader);
+  if (!isReader) {
     document.body.classList.remove("immersive-reader");
     disconnectPageObserver();
   }
   state.currentView = name;
   els.viewHome.classList.toggle("hidden", name !== "home");
   els.viewAlbum.classList.toggle("hidden", name !== "album");
-  els.viewReader.classList.toggle("hidden", name !== "reader");
-  els.scrollProgressTrack.classList.toggle("hidden", name !== "reader");
-  if (name === "reader") {
+  els.viewReader.classList.toggle("hidden", !isReader);
+  els.scrollProgressTrack.classList.toggle("hidden", !isReader);
+  if (isReader) {
     els.scrollProgressBar.style.width = "0%";
   }
   window.scrollTo({ top: 0, behavior: "instant" });
@@ -1374,11 +1408,15 @@ function bindEvents() {
     if (state.suppressHashEvent) return;
     handleRouteFromHash();
   });
+
+  window.addEventListener("resize", detectDeviceType, { passive: true });
+  window.addEventListener("orientationchange", detectDeviceType, { passive: true });
 }
 
 // ---------------- Init ----------------
 
 async function init() {
+  detectDeviceType();
   initTheme();
   renderFavorites();
   renderHistory();
