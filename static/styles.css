@@ -71,6 +71,8 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   line-height: 1.55;
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.25s ease, color 0.25s ease;
 }
@@ -807,12 +809,18 @@ select:focus {
   display: block;
 }
 
+.album-info {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .album-info h1 {
   margin: 0 0 14px;
   font-size: clamp(20px, 2.8vw, 26px);
   font-weight: 800;
   line-height: 1.32;
   letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
 }
 
 .album-meta {
@@ -882,7 +890,7 @@ select:focus {
 
 .chapter-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr));
   gap: 10px;
 }
 
@@ -892,6 +900,9 @@ select:focus {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -908,7 +919,9 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .chapter-num {
@@ -927,6 +940,8 @@ select:focus {
 }
 
 .chapter-item-title {
+  flex: 1;
+  min-width: 0;
   font-size: 13.5px;
   font-weight: 500;
   overflow: hidden;
@@ -1490,7 +1505,7 @@ html[data-device="mobile"] .album-actions .btn-primary {
 }
 
 html[data-device="mobile"] .chapter-list {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 html[data-device="mobile"] body.in-reader .topbar-inner {
