@@ -155,7 +155,7 @@ class JmService:
             files: List[Tuple[float, int, Path]] = []
             total_size = 0
             for entry in settings.cache_dir.iterdir():
-                if not entry.is_file() or entry.name.endswith(".tmp"):
+                if not entry.is_file() or entry.name.startswith("_tmp_"):
                     continue
                 try:
                     stat = entry.stat()
@@ -383,7 +383,7 @@ class JmService:
     def get_cover_bytes(self, album_id: str) -> Tuple[bytes, str]:
         album_id = album_id.strip()
         cache_key = f"cover_{_sanitize_key(album_id)}"
-        cache_path = settings.cache_dir / f"{cache_key}.img"
+        cache_path = settings.cache_dir / f"{cache_key}.jpg"
 
         cached = self._read_cached_file(cache_path)
         if cached is not None:
@@ -395,7 +395,8 @@ class JmService:
             if cached is not None:
                 return cached, _detect_image_mime(cached)
 
-            tmp_path = settings.cache_dir / f"{cache_key}_{uuid.uuid4().hex}.tmp"
+            # Must end with .jpg so jmcomic/Pillow recognizes the image format
+            tmp_path = settings.cache_dir / f"_tmp_{cache_key}_{uuid.uuid4().hex}.jpg"
             client = self._get_client()
             try:
                 client.download_album_cover(album_id, str(tmp_path))
@@ -403,12 +404,15 @@ class JmService:
                     raise JmServiceError("封面下载失败", status_code=502)
                 os.replace(tmp_path, cache_path)
                 data = cache_path.read_bytes()
-            except JmServiceError:
+            except Exception as cover_exc:
                 tmp_path.unlink(missing_ok=True)
-                raise
-            except Exception as exc:
-                tmp_path.unlink(missing_ok=True)
-                raise JmServiceError(f"获取封面失败：{exc}", status_code=502) from exc
+                # Fallback: try fetching the first page of the album as cover
+                try:
+                    return self.get_page_bytes(album_id, 0)
+                except Exception:
+                    if isinstance(cover_exc, JmServiceError):
+                        raise cover_exc
+                    raise JmServiceError(f"获取封面失败：{cover_exc}", status_code=502) from cover_exc
 
         self._maybe_evict_disk_cache()
         return data, _detect_image_mime(data)
@@ -434,7 +438,7 @@ class JmService:
 
             image_detail = photo[index]
             # Use .jpg suffix on temp path so PIL/jmcomic detects format cleanly
-            tmp_path = settings.cache_dir / f"{cache_key}_{uuid.uuid4().hex}.jpg"
+            tmp_path = settings.cache_dir / f"_tmp_{cache_key}_{uuid.uuid4().hex}.jpg"
             client = self._get_client()
             try:
                 client.download_by_image_detail(image_detail, str(tmp_path), decode_image=True)

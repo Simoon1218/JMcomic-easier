@@ -1,3 +1,5 @@
+import { createZipBlob } from "./zip.js";
+
 const STORAGE_KEYS = {
   THEME: "jm_theme",
   HISTORY: "jm_history_v1",
@@ -654,10 +656,6 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
     showAlert("已有正在进行的 ZIP 下载任务，请等待完成或先取消当前任务。");
     return;
   }
-  if (typeof window.JSZip === "undefined") {
-    showAlert("JSZip 脚本未能加载，请检查网络连接后刷新页面重试。");
-    return;
-  }
 
   state.downloading = true;
   const controller = new AbortController();
@@ -699,7 +697,7 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
     }
 
     // 2. Concurrent download (max 3 workers to stay friendly to free hosting)
-    const zip = new window.JSZip();
+    const entries = new Array(tasks.length);
     const total = tasks.length;
     let completed = 0;
     let failed = 0;
@@ -708,20 +706,22 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
     const worker = async () => {
       while (cursor < total) {
         if (signal.aborted) return;
-        const current = tasks[cursor++];
+        const idx = cursor++;
+        const current = tasks[idx];
         try {
           const blob = await fetchBlobWithRetry(current.url, signal, 2);
           const ext = guessExtensionFromBlob(blob);
           const fileName = `${String(current.pageNumber).padStart(3, "0")}.${ext}`;
           const targetPath = current.folderName ? `${current.folderName}/${fileName}` : fileName;
-          zip.file(targetPath, blob);
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          entries[idx] = { name: targetPath, data: bytes };
         } catch (err) {
           if (signal.aborted) return;
           failed++;
           console.error("Failed page:", current.url, err);
         } finally {
           completed++;
-          const pct = 5 + (completed / total) * 80;
+          const pct = 5 + (completed / total) * 85;
           updateDownloadDock({
             status: `下载图片 ${completed}/${total}${failed ? `（失败 ${failed}）` : ""}`,
             percent: pct,
@@ -737,21 +737,18 @@ async function runZipDownload(chaptersToFetch, zipFilename, label) {
       throw new DOMException("Aborted", "AbortError");
     }
 
-    // 3. Package ZIP in browser memory
+    const validEntries = entries.filter(Boolean);
+    if (!validEntries.length) {
+      throw new Error("所有图片均下载失败，请稍后重试");
+    }
+
+    // 3. Package ZIP in browser memory (zero external CDN dependency)
     updateDownloadDock({
       status: "正在浏览器中打包 ZIP...",
-      percent: 88,
+      percent: 94,
     });
 
-    const zipBlob = await zip.generateAsync(
-      { type: "blob", compression: "STORE" },
-      (meta) => {
-        updateDownloadDock({
-          status: `正在打包 ZIP (${Math.round(meta.percent)}%)...`,
-          percent: 85 + meta.percent * 0.15,
-        });
-      }
-    );
+    const zipBlob = createZipBlob(validEntries);
 
     if (signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
